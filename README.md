@@ -1,96 +1,80 @@
 # opencode-context-manager
 
-> Keep your [opencode](https://opencode.ai) sessions lean and focused — even on repos with hundreds of files.
+A search engine for your codebase, built into [opencode](https://opencode.ai).
 
-A native TypeScript plugin that gives opencode a **searchable code index** and a **context compression strategy**, so the AI spends its token budget on what matters instead of reading entire files blindly.
+When you're working on a large project, the AI wastes thousands of tokens reading entire files just to find one function. This plugin fixes that by giving the AI a **local code index** — a searchable database of every function, class, and interface in your project. Instead of reading blindly, the AI searches first, then reads only the 20 lines it actually needs.
 
-## Why you need this
+**The result:** 90% fewer tokens spent on code lookups, longer productive sessions, and the AI finds things `grep` can't.
 
-As projects grow, the AI's context window fills up fast. Without an index, opencode has to `grep` + `read` whole files just to find one function — burning tokens on imports, comments, and code it never needed. On a 679-file project, a single "where is the auth logic?" question wastes 3,500+ tokens; when `grep` fails (keywords don't match literally), the LLM falls back to `glob` + blind reads, burning 3,000+ more.
+## What it does
 
-**context-manager fixes this by:**
+The plugin runs silently in the background. When opencode starts, it automatically indexes your project — walking every code file, extracting function names, class names, interfaces, types, and enums, and storing them in a local SQLite database with full-text search.
 
-1. **Building a lightweight index** of your project's functions, classes, interfaces, types, and enums — just names, signatures, and line numbers.
-2. **Letting the AI search before it reads** — `context_search "auth handler"` returns `function handleAuth @ src/auth.ts:42` in milliseconds, so the AI reads only the 20 lines it needs instead of the whole 800-line file.
-3. **Staying in sync automatically** — every file edit, create, or delete re-indexes just that file (500ms debounce, content-hash diff). No manual re-runs.
-4. **Guiding the AI to compress** — an injected system prompt + SKILL.md teach the AI to classify files into three detail tiers (active / dependencies / rest-of-repo) and strip content when context gets tight.
+Then, every time the AI needs to find code, it uses `context_search` instead of `grep` + reading whole files. The search returns exact file paths and line numbers in under a millisecond, so the AI reads only what it needs.
 
-**Measured savings:** 86.5% average token reduction per query on a real 679-file project (tiktoken-verified, see benchmark below).
+When you edit a file, the index updates itself automatically — no manual re-indexing, ever.
 
-## Benchmark: real token savings
+## How it saves tokens
 
-Measured with **tiktoken** (`cl100k_base` — the tokenizer used by GPT-4/Claude-class models) on real opencode tool output. Project: `madtrackers-sale-point` (679 files, 842 chunks indexed). Each query simulates a typical user question and compares two approaches:
+Here's what happens when the AI needs to find "the auth handler" in a 679-file project:
 
-- **Without plugin:** the LLM runs `grep` to find candidate files, then reads 1 full file. When `grep` returns nothing (keywords don't match literally), the LLM falls back to `glob` + 3 blind file reads — modeled here because that's what actually happens.
-- **With plugin:** `context_search` returns exact file + line, then the LLM reads ~20 lines around that location.
+**Without this plugin:**
+1. The AI runs `grep "auth" src/` — gets back 100+ matches across 56 files (1,800+ tokens of output)
+2. The AI reads one full file hoping it's the right one (1,700+ tokens)
+3. If `grep` found nothing (the word "auth" doesn't appear literally), the AI lists files with `glob`, then reads them one by one — 3,000+ tokens wasted before it finds anything
+4. **Total: 3,500-6,800 tokens per query, and the AI might still get it wrong**
 
-### Per-query comparison
+**With this plugin:**
+1. The AI calls `context_search "auth handler"` — gets back `function handleAuth @ src/auth.ts:42` in 0.16ms
+2. The AI reads 20 lines around line 42
+3. **Total: ~430 tokens per query, always finds the right answer**
 
-| Query | Without plugin (tokens) | With plugin (tokens) | Saved | % |
-|-------|------------------------:|---------------------:|------:|--:|
-| `auth login handler` | 3,532 | 531 | 3,001 | 85.0% |
-| `database connection pool` | 6,887 | 453 | 6,434 | 93.4% |
-| `invoice create receipt` | 3,004 | 669 | 2,335 | 77.7% |
-| `error handler middleware` | 1,802 | 480 | 1,322 | 73.4% |
-| `websocket real-time sync` | 3,004 | 337 | 2,667 | 88.8% |
-| **TOTAL (5 queries)** | **18,229** | **2,470** | **15,759** | **86.5%** |
-| **Average per query** | **3,645** | **494** | **3,151** | — |
+The difference is even bigger for searches where the keyword doesn't match literally. Searching for `"invoice"` finds `createInvoice`. Searching for `"websocket"` finds `WebSocketHandler`. The trigram tokenizer matches substrings, not just whole words — something `grep` can't do.
 
-> **Note:** `invoice` and `websocket` queries: `grep` returns zero results (those exact words don't appear in the codebase). Without an index, the LLM runs `glob` (1,088 tokens of file listing) then reads 3 files blind (1,912 tokens) before finding anything — or gives up and asks the user. The plugin's partial-token matching finds the right function in one call.
+## Benchmark
 
-### Session projection (20 turns, 10 code queries)
+Measured with **tiktoken** (`cl100k_base` — the exact tokenizer used by GPT-4) on real opencode tool output. Project: `madtrackers-sale-point` (679 files, 842 indexed chunks, 273 files with code symbols).
 
-| Metric | Without plugin | With plugin | Saved |
-|--------|--------------:|------------:|------:|
-| 10 code queries | 36,450 | 4,940 | 31,510 |
-| System prompt (20 turns) | 0 | 1,580 | -1,580 |
-| Tool definitions (one-time) | 0 | 100 | -100 |
-| **Session total** | **36,450** | **6,620** | **29,830 (81.8%)** |
+### Token usage per query
 
-The plugin's overhead (system prompt injection + tool definitions) is ~1,680 tokens per session — dwarfed by the 29,830 tokens saved on code lookups.
+| Query | Without plugin | With plugin | Saved |
+|-------|---------------:|------------:|------:|
+| `auth login handler` | 3,532 | 432 | 87.8% |
+| `database connection pool` | 6,887 | 219 | 96.8% |
+| `invoice create receipt` | 3,004 | 434 | 85.6% |
+| `error handler middleware` | 1,802 | 435 | 75.9% |
+| `websocket real-time sync` | 3,004 | 337 | 88.8% |
+| **Average** | **3,645** | **371** | **89.8%** |
 
-### What "without plugin" actually costs
+> `invoice` and `websocket` queries: `grep` returns zero results because those exact words don't appear in the codebase. Without an index, the LLM burns 3,000+ tokens reading files blind. The plugin's trigram tokenizer finds `createInvoice` and `WebSocketHandler` instantly via substring matching.
 
-When the LLM needs to find code without an index, it does one of:
+### Full session (20 turns, 10 code queries)
 
-1. **`grep` + read 1-3 full files** — works when keywords match literally, but still reads 1,700-6,800 tokens of irrelevant code per query.
-2. **`glob` + read files blind** — when `grep` fails, the LLM lists files (1,088 tokens) and reads them one by one. On a 679-file project, this burns 3,000+ tokens before finding the right function — or the LLM gives up.
-3. **Ask the user** — worst case: the LLM asks "which file has the auth logic?", costing a round-trip and user patience.
+| Metric | Without plugin | With plugin |
+|--------|---------------:|------------:|
+| 10 code queries | 36,450 | 3,710 |
+| System prompt overhead (20 turns) | 0 | 1,580 |
+| Tool definitions (one-time) | 0 | 97 |
+| **Session total** | **36,450** | **5,387** |
+| **Saved** | — | **31,063 tokens (85.2%)** |
 
-The plugin eliminates all three by providing a pre-built index that the LLM queries in one tool call.
+The plugin's overhead is ~1,677 tokens per session. The savings are 31,063 tokens. That's an 18:1 return.
 
-### How the benchmark was measured
+### Search engine speed
 
-- **Tokenizer:** tiktoken `cl100k_base` (exact tokenizer used by GPT-4, not an approximation)
-- **Project:** `madtrackers-sale-point` (Next.js, 679 code files, 842 indexed chunks)
-- **Without plugin:** `grep -rn <keyword> src/` output + reading 1 full file from results. When grep returns nothing: `glob` output + 3 blind file reads (realistic fallback behavior)
-- **With plugin:** `context_search` output (5 results) + reading 20 lines around the best match
-- **System prompt overhead:** the `<context-manager>` block injected each turn (79 tokens)
-- **Tool overhead:** 4 tool definitions sent once per session (100 tokens)
+| | Previous (JSON) | Current (SQLite FTS5) | Speedup |
+|--|----------------:|----------------------:|--------:|
+| Average query time | 2.16ms | 0.16ms | **14x** |
 
-## What's included
-
-- **4 custom tools** the LLM calls directly:
-  - `context_analyze` — indexes a project: walks code files, extracts symbols, stores in a local JSON index
-  - `context_search` — keyword/phrase search over the index; returns type, name, file, and line number
-  - `context_stats` — shows what's indexed (chunk counts by language, file counts, timestamp)
-  - `context_clear` — wipes the index (useful when switching projects)
-- **2 hooks** that run automatically:
-  - `event` hook — listens for `file.edited` / `file.watcher.updated` and re-indexes only the changed file (debounced + hash-diffed)
-  - `experimental.chat.system.transform` hook — injects a `<context-manager>` system-prompt block each turn, reminding the AI to search before reading
-- **SKILL.md** — teaches opencode a three-tier compression strategy (active files / dependencies / rest-of-repo) and a token budget heuristic
-
-No Python, no venv, no native modules. One runtime dependency: `@opencode-ai/plugin` (installed automatically by Bun or npm).
+The JSON approach re-tokenized all 842 chunks on every search. SQLite FTS5 uses an inverted index with constant-time lookup — it stays fast as your project grows.
 
 ## Installation
 
-You can install this plugin **two ways**, both fully supported.
+### From npm (recommended)
 
-### Option A — From npm (recommended)
+Add the package name to your opencode config file. That's it — opencode installs the plugin automatically via Bun on startup.
 
-Add the package name to your opencode config. Opencode installs it automatically via Bun at startup.
-
-`~/.config/opencode/opencode.json` (global) or `opencode.json` (project-level):
+**Global** (`~/.config/opencode/opencode.json`):
 
 ```json
 {
@@ -99,105 +83,96 @@ Add the package name to your opencode config. Opencode installs it automatically
 }
 ```
 
-Restart opencode. The plugin loads from `~/.cache/opencode/node_modules/`, and `engines.opencode: ">=1.0.0"` is validated on load. No manual file copying needed.
+**Project-level** (`opencode.json` in your project root):
 
-> **Note:** The `engines.opencode` field in `package.json` is only enforced for npm-installed plugins. If you install from local files (Option B), it serves as documentation.
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["madkoding-context-manager"]
+}
+```
 
-### Option B — From local files
+Restart opencode. The plugin auto-indexes your project on first load. No manual setup needed.
 
-Clone the repo and run the installer, which copies the plugin + skill and updates your config.
+### From source (alternative)
+
+If you prefer to run from a local clone:
 
 ```bash
 git clone https://github.com/madkoding/opencode-context-manager.git
 cd opencode-context-manager
 ./install.sh
-# Restart opencode
 ```
 
-The script:
-1. Copies the plugin to `~/.config/opencode/plugins/`
-2. Copies `SKILL.md` to `~/.config/opencode/skills/context-manager/`
-3. Installs `@opencode-ai/plugin` via Bun if not already present
-4. Adds `"./plugins/@madkoding-context-manager.ts"` to the `plugin` array in `opencode.jsonc`
+The installer copies the plugin to `~/.config/opencode/plugins/`, copies the skill to `~/.config/opencode/skills/context-manager/`, installs `@opencode-ai/plugin` via Bun, and adds the plugin to your `opencode.jsonc`.
 
 Install output is newline-delimited JSON on stderr (parseable with `jq`):
 
 ```bash
-./install.sh 2> install.log          # capture to file
 ./install.sh 2>&1 | jq -r .message   # human-readable one-liners
+./install.sh 2> install.log          # capture to file
 ```
 
-### Uninstallation
+### Uninstall
 
 **npm:** Remove `"madkoding-context-manager"` from your `plugin` array and restart.
 
-**Local:**
-
-```bash
-./uninstall.sh
-```
-
-Both install and uninstall emit structured JSON logs to stderr (`service: "context-manager.install"` / `"context-manager.uninstall"`).
-
-## Tools reference
-
-| Tool | Args | What it does |
-|------|------|--------------|
-| `context_analyze` | `path` (optional, defaults to session dir) | Walks the project, parses all code files, builds the index. Run once per project — auto-updates handle the rest. |
-| `context_search` | `query` (required), `n` (optional, default 10) | Keyword/phrase search. Returns `type name @ file:line` ranked by relevance (name matches score 5x, content matches 2x, partial matches 1x). |
-| `context_stats` | — | Shows index metadata: project root, indexed-at timestamp, chunk counts by file extension, total file count. |
-| `context_clear` | — | Deletes the index JSON. Use when switching to a different project or starting fresh. |
+**Source:** Run `./uninstall.sh` from the cloned repo.
 
 ## How it works
 
-### Indexing
+### 1. Indexing (automatic)
 
-`context_analyze` walks the directory tree (skipping `node_modules/`, `.git/`, `dist/`, `build/`, etc.) and for each code file extracts:
+When opencode starts and no index exists, the plugin automatically walks your project directory — skipping `node_modules/`, `.git/`, `dist/`, `build/`, and other common ignore targets. For every code file it finds, it uses language-specific regex patterns to extract:
 
-- **Functions** (including arrow functions in JS/TS)
-- **Classes** and **structs** (Go/Rust)
-- **Interfaces** (TS, Go, Java)
-- **Type aliases** (TS)
-- **Enums** (TS, Rust, Java)
-- **Traits** (Rust, mapped to interface)
+- Functions and methods (including arrow functions in JS/TS)
+- Classes and structs
+- Interfaces
+- Type aliases
+- Enums
+- Traits (Rust), modules (Ruby), namespaces (C++)
 
-Extraction uses language-specific regex patterns — fast, zero-dependency, no AST parser overhead. Each symbol becomes a "chunk" with `{ id, file, name, type, line, content }`.
+Each symbol becomes a "chunk" stored in SQLite: `{ name, file, type, line, content }`. You can also trigger a manual re-index anytime with `context_analyze`, or index a specific path.
 
-### Storage
+### 2. Storage (SQLite FTS5)
 
-The index lives at `~/.cache/opencode/context-manager.json` — a single JSON file with `{ projectRoot, chunks[], indexedAt, fileHashes }`. No database, no server, no lock files.
+The index lives at `~/.cache/opencode/context-manager.sqlite`. Three tables:
 
-### Search scoring
+- **`chunks_fts`** — an FTS5 virtual table with a `trigram` tokenizer that enables substring matching. The columns `name` and `content` are full-text indexed; `id`, `file`, `type`, and `line` are stored but unindexed (metadata only).
+- **`file_hashes`** — MD5 hashes per file, used to skip re-parsing when a file's content hasn't changed.
+- **`meta`** — key-value store for `projectRoot` and `indexedAt`.
 
-`context_search` tokenizes the query and each chunk's name + content, then scores:
+WAL mode is enabled for concurrent reads during writes. The database connection is opened once at plugin startup and reused for all queries.
 
-| Match type | Score |
-|------------|-------|
-| Exact token match in **name** | ×5 |
-| Exact token match in **content** | ×2 |
-| Partial token match (≥3 chars) in **name** | ×2 |
-| Partial token match (≥3 chars) in **content** | ×1 |
+### 3. Search (FTS5 + BM25)
 
-Results are sorted by score, truncated to `n` (default 10).
+When the AI calls `context_search "auth handler"`:
 
-### Auto-update
+1. The query is tokenized: `"auth" OR "handler"`
+2. SQLite FTS5 runs a MATCH query against the inverted index
+3. Results are ranked by **BM25** (the standard full-text ranking algorithm)
+4. Top N results are returned as `type name @ file:line`
 
-When a file is edited, created, or deleted, the `event` hook fires:
+The `trigram` tokenizer is the key to why this works better than `grep`: it breaks text into 3-character sequences, so `"invoice"` matches inside `"createInvoice"`, and `"websocket"` matches inside `"WebSocketHandler"`. `grep` can only match literal strings.
 
-1. **Debounce** (500ms) — coalesce rapid save bursts
-2. **Hash check** (MD5 of file content) — skip re-parse if content unchanged
-3. **Remove** old chunks for that file, **parse** new content, **save** updated index
+### 4. Auto-update (incremental)
 
-Deleted files (`unlink` event) have their chunks removed. This means your index is always current without ever re-running `context_analyze` manually.
+When you edit, create, or delete a file, the `event` hook fires:
 
-### System prompt injection
+1. **500ms debounce** — coalesces rapid save bursts
+2. **MD5 hash check** — if the file content hasn't changed, skip entirely
+3. **Incremental update** — delete old chunks for that file (`DELETE FROM chunks_fts WHERE file = ?`), parse the new content, insert the new chunks
 
-Each chat turn, the `experimental.chat.system.transform` hook checks if an index exists. If so, it injects:
+Deleted files have their chunks and hash removed. The index is always current — you never need to re-run `context_analyze` after the initial auto-index.
+
+### 5. System prompt injection
+
+Each chat turn, the `experimental.chat.system.transform` hook checks if an index exists. If so, it injects a block into the system prompt:
 
 ```
 <context-manager>
-Code index available: 142 chunks across 23 files.
-Indexed: 2026-07-08T22:00:00.000Z
+Code index available: 842 chunks across 273 files.
+Indexed: 2026-07-09T03:39:54Z
 
 IMPORTANT: Use the context_search tool to find code locations BEFORE reading files.
 This saves tokens — search returns function/class names with line numbers,
@@ -207,22 +182,33 @@ so you can read only the specific file and section you need.
 
 This nudges the AI toward search-first behavior without forcing it.
 
-### Compression strategy (via SKILL.md)
+### 6. Context compression (via SKILL.md)
 
 The bundled skill teaches opencode to classify files into three tiers when context is limited:
 
-| Tier | Detail level | When to apply |
-|------|-------------|---------------|
-| **Active** | Full content | Files the user is actively editing or discussing |
-| **Dependencies** | Signatures + types only | Imported/required files |
-| **Rest of repo** | One-line summary | Everything else, unless explicitly asked |
+| Tier | What the AI keeps | When it applies |
+|------|-------------------|-----------------|
+| Active files | Full content | Files the user is editing or discussing |
+| Dependencies | Signatures + types only | Imported/required files |
+| Rest of repo | One-line summary | Everything else |
 
-Token budget heuristic: 50% active / 30% dependency signatures / 20% search results + summaries.
+Token budget: 50% active files / 30% dependency signatures / 20% search results + summaries.
+
+## Tools
+
+The plugin adds 4 tools that the AI calls directly:
+
+| Tool | Arguments | What it does |
+|------|----------|-------------|
+| `context_analyze` | `path` (optional) | Re-indexes the project. Runs automatically on first load. Use manually to re-index or target a specific path. |
+| `context_search` | `query` (required), `n` (optional, default 10) | Searches the index via FTS5 + BM25. Returns `type name @ file:line` ranked by relevance, with substring matching. |
+| `context_stats` | — | Shows what's indexed: project root, timestamp, chunk counts by language, file count. |
+| `context_clear` | — | Deletes the entire index. Use when switching projects or starting fresh. |
 
 ## Supported languages
 
-| Language | Extensions | Symbols extracted |
-|----------|-----------|-------------------|
+| Language | Extensions | What it extracts |
+|----------|-----------|------------------|
 | Python | `.py` | functions, classes |
 | JavaScript / TypeScript | `.js` `.jsx` `.ts` `.tsx` | functions, arrow functions, classes, interfaces, types, enums |
 | Go | `.go` | functions, structs, interfaces |
@@ -230,26 +216,58 @@ Token budget heuristic: 50% active / 30% dependency signatures / 20% search resu
 | Java | `.java` | classes, methods, interfaces, enums |
 | Ruby | `.rb` | functions, classes, modules |
 | PHP | `.php` | functions, classes, interfaces, traits, enums |
-| C/C++ | `.c` `.h` `.cpp` `.hpp` | functions, classes, structs, namespaces, enums |
+| C / C++ | `.c` `.h` `.cpp` `.hpp` | functions, classes, structs, namespaces, enums |
 | C# | `.cs` | methods, classes, interfaces, structs, enums |
+
+## Architecture
+
+```
+plugins/
+  @madkoding-context-manager.ts    # Plugin entry point — tool + hook wiring
+src/
+  types.ts                         # Chunk interface, IGNORE/CODE_EXTS constants
+  store.ts                         # SQLite layer (FTS5, CRUD, search, BM25)
+  indexer.ts                       # Filesystem walker, project indexer, incremental update
+  prompt.ts                        # System prompt builder
+  parsers/
+    python.ts                      # pyParse
+    javascript.ts                  # jsParse, tsParse
+    go.ts                          # goParse
+    rust.ts                        # rsParse
+    java.ts                        # javaParse
+    ruby.ts                        # rbParse
+    php.ts                         # phpParse
+    cpp.ts                         # cppParse (C + C++)
+    csharp.ts                      # csParse
+    index.ts                       # PARSERS map
+test/
+  parsers.test.ts                  # 36 tests — parser correctness per language
+  store.test.ts                    # 18 tests — SQLite CRUD, FTS5, BM25
+  indexer.test.ts                  # 13 tests — walk, indexProject, updateFile
+  integration.test.ts              # 5 tests — end-to-end index → search → verify
+  contracts.test.ts                # 32 tests — interface/output format stability
+```
+
+**104 tests, 0 failures.** Run them with `bun test`.
+
+The plugin is fully decoupled: parsers are pure functions, the SQLite layer accepts a `Database` instance as a parameter (no globals), and the indexer accepts a database + filesystem path. The entry point wires everything together with opencode's plugin API.
 
 ## Logging
 
 The plugin emits structured logs via `client.app.log()` with `service: "context-manager"`:
 
-| Level | When |
-|-------|------|
-| `info` | Plugin initialized, project indexed |
+| Level | When it fires |
+|-------|---------------|
+| `info` | Plugin initialized, project indexed, auto-analyze complete |
 | `debug` | File re-indexed, file removed from index |
 | `warn` | File read failed (permissions, missing) |
-| `error` | *(reserved for future use)* |
 
 Install/uninstall scripts emit newline-delimited JSON to stderr for programmatic consumption.
 
 ## Requirements
 
-- **opencode >=1.0.0** (declared in `package.json` `engines.opencode`; enforced on npm install, documented for local install)
-- **[Bun](https://bun.sh)** — only needed for local-file installs; npm installs are handled by opencode's built-in Bun integration
+- **opencode >=1.0.0** — declared in `package.json` under `engines.opencode`. Enforced on npm install; serves as documentation for local installs.
+- **[Bun](https://bun.sh)** — only needed for local-file installs. npm installs are handled by opencode's built-in Bun integration. SQLite is built into Bun (`bun:sqlite`) — zero additional dependencies.
 
 ## License
 
