@@ -80,9 +80,9 @@ Restart opencode. The plugin auto-indexes your project in a background worker (d
 
 If you open opencode in a very large directory (e.g. your home), the auto-index is capped at 10,000 files. Pass a narrower path to `context_analyze` for full coverage, or raise the cap with `CONTEXT_MANAGER_MAX_FILES=50000`.
 
-### From source (alternative)
+### From source (recommended for first install)
 
-If you prefer to run from a local clone:
+The npm install above is the simplest path, but the first run will be slow while opencode downloads the package with Bun (the TUI may look frozen for 30–60 seconds). For instant feedback during that first install, run the source installer instead:
 
 ```bash
 git clone https://github.com/madkoding/opencode-context-manager.git
@@ -90,7 +90,7 @@ cd opencode-context-manager
 ./install.sh
 ```
 
-The installer copies the plugin to `~/.config/opencode/plugins/`, installs `@opencode-ai/plugin` via Bun, and adds the plugin to your `opencode.jsonc`. The skill is copied on first plugin load.
+The installer copies the plugin to `~/.config/opencode/plugins/`, plus a small `context-manager-loading-shim.ts` that loads instantly and shows an "Installing plugin…" toast during the first npm download. After the first run, subsequent startups use the npm cache and are fast.
 
 Install output is newline-delimited JSON on stderr (parseable with `jq`):
 
