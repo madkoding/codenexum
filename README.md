@@ -80,6 +80,8 @@ The `npm install` postinstall hook automatically copies a small `context-manager
 
 Restart opencode. The plugin auto-indexes your project in a background worker (does not block the TUI) and copies the bundled `SKILL.md` to `~/.config/opencode/skills/context-manager/` so opencode discovers it without extra config. No manual setup needed.
 
+> **Note:** The first opencode startup after adding the plugin will appear frozen for ~30 seconds while opencode downloads the package via Bun. This is normal — subsequent startups use the cache and are instant.
+
 If you open opencode in a very large directory (e.g. your home), the auto-index is capped at 10,000 files. Pass a narrower path to `context_analyze` for full coverage, or raise the cap with `CONTEXT_MANAGER_MAX_FILES=50000`.
 
 ### From source (alternative)
