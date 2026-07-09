@@ -8,8 +8,13 @@
     "./server": "./plugins/@madkoding-context-manager.ts"
   },
   "files": [
-    "plugins/"
+    "plugins/",
+    "src/"
   ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
   "engines": {
     "opencode": ">=1.0.0"
   },
