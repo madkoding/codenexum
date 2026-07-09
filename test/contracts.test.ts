@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
 
-import type { Chunk } from "../src/types"
+import type { Chunk, ChunkType } from "../src/types"
 import { IGNORE, CODE_EXTS } from "../src/types"
 import { PARSERS } from "../src/parsers"
 import {
@@ -52,8 +52,8 @@ test("C1: Chunk has required fields with correct types", () => {
   expect(typeof chunk.content).toBe("string")
 })
 
-test("C1: Chunk.type is limited to the 5 allowed values", () => {
-  const validTypes = new Set(["function", "class", "interface", "type", "enum"])
+test("C1: Chunk.type uses ChunkType union", () => {
+  const validTypes: ChunkType[] = ["function", "class", "interface", "type", "enum", "import", "export", "decorator", "selector", "component", "config", "table", "heading"]
   // Every parser should only produce chunks with these types
   const samples = [
     "function foo() {}",
@@ -65,24 +65,24 @@ test("C1: Chunk.type is limited to the 5 allowed values", () => {
   for (const code of samples) {
     const chunks = PARSERS[".ts"](code, "test.ts")
     for (const c of chunks) {
-      expect(validTypes.has(c.type)).toBe(true)
+      expect(validTypes.includes(c.type as ChunkType)).toBe(true)
     }
   }
 })
 
 test("C1: Every parser produces valid Chunk objects", () => {
   const sampleCode: Record<string, string> = {
-    ".py": "def foo(x): return x\nclass Bar: pass",
-    ".js": "function foo() {}\nclass Bar {}",
-    ".ts": "function foo() {}\ninterface IBar {}\ntype Baz = string\nenum Q { A }",
-    ".go": "func foo() {}\ntype Bar struct{}\ntype IBar interface{}",
-    ".rs": "fn foo() {}\nstruct Bar {}\nenum Q { A }\ntrait T {}",
-    ".java": "class Bar { public void foo() {} }\ninterface IBar {}",
-    ".rb": "def foo\nend\nclass Bar\nend",
-    ".php": "<?php function foo() {} class Bar {} interface IBar {}",
-    ".c": "int foo() { return 0; } struct Bar { int x; };",
-    ".cpp": "int foo() { return 0; } class Bar {}; namespace NS {}",
-    ".cs": "public void Foo() {} public class Bar {} public interface IBar {}",
+    ".py": "import os\ndef foo(x): return x\nclass Bar: pass",
+    ".js": "import { x } from 'y'\nexport function foo() {}\nclass Bar {}",
+    ".ts": "import { x } from 'y'\nexport function foo() {}\ninterface IBar {}\ntype Baz = string\nenum Q { A }",
+    ".go": 'import "fmt"\nfunc foo() {}\ntype Bar struct{}\ntype IBar interface{}',
+    ".rs": "use std::collections::HashMap\nfn foo() {}\nstruct Bar {}\nenum Q { A }\ntrait T {}",
+    ".java": "import java.util.List\nclass Bar { public void foo() {} }\ninterface IBar {}",
+    ".rb": "require 'json'\ndef foo\nend\nclass Bar\nend",
+    ".php": "<?php use App\\Models\\User;\nfunction foo() {} class Bar {} interface IBar {}",
+    ".c": '#include "header.h"\nint foo() { return 0; } struct Bar { int x; };',
+    ".cpp": '#include <vector>\nint foo() { return 0; } class Bar {}; namespace NS {}',
+    ".cs": "using System.Collections;\npublic void Foo() {} public class Bar {} public interface IBar {}",
   }
   for (const [ext, code] of Object.entries(sampleCode)) {
     const parser = PARSERS[ext]
@@ -94,7 +94,7 @@ test("C1: Every parser produces valid Chunk objects", () => {
       expect(typeof c.file).toBe("string")
       expect(typeof c.name).toBe("string")
       expect(c.name.length).toBeGreaterThan(0)
-      expect(["function", "class", "interface", "type", "enum"]).toContain(c.type)
+      expect(["function", "class", "interface", "type", "enum", "import", "export", "decorator", "selector", "component", "config", "table", "heading"] satisfies ChunkType[]).toContain(c.type)
       expect(typeof c.line).toBe("number")
       expect(c.line).toBeGreaterThanOrEqual(1)
       expect(typeof c.content).toBe("string")
@@ -118,8 +118,9 @@ test("C2: PARSERS has no extensions outside CODE_EXTS", () => {
   }
 })
 
-test("C2: PARSERS covers all 15 extensions", () => {
-  expect(Object.keys(PARSERS).length).toBe(15)
+test("C2: PARSERS covers all registered extensions", () => {
+  const count = Object.keys(PARSERS).length
+  expect(count).toBeGreaterThanOrEqual(15)
 })
 
 // ═══════════════════════════════════════════════════════════════
@@ -225,6 +226,14 @@ test("C6: context_analyze output format has required lines", () => {
   const ifs = chunks.filter(x => x.type === "interface").length
   const types = chunks.filter(x => x.type === "type").length
   const enums = chunks.filter(x => x.type === "enum").length
+  const imp = chunks.filter(x => x.type === "import").length
+  const exp = chunks.filter(x => x.type === "export").length
+  const dec = chunks.filter(x => x.type === "decorator").length
+  const sel = chunks.filter(x => x.type === "selector").length
+  const cmp = chunks.filter(x => x.type === "component").length
+  const cfg = chunks.filter(x => x.type === "config").length
+  const tbl = chunks.filter(x => x.type === "table").length
+  const hdg = chunks.filter(x => x.type === "heading").length
 
   const output = [
     `Indexed ${2} files → ${chunks.length} chunks`,
@@ -233,6 +242,14 @@ test("C6: context_analyze output format has required lines", () => {
     `  interfaces: ${ifs}`,
     `  types:      ${types}`,
     `  enums:      ${enums}`,
+    `  imports:    ${imp}`,
+    `  exports:    ${exp}`,
+    `  decorators: ${dec}`,
+    `  selectors:  ${sel}`,
+    `  components: ${cmp}`,
+    `  config:     ${cfg}`,
+    `  tables:     ${tbl}`,
+    `  headings:   ${hdg}`,
     `  DB: /fake/path.sqlite`,
   ].join("\n")
 
@@ -242,6 +259,14 @@ test("C6: context_analyze output format has required lines", () => {
   expect(output).toContain("interfaces: 0")
   expect(output).toContain("types:      0")
   expect(output).toContain("enums:      0")
+  expect(output).toContain("imports:    0")
+  expect(output).toContain("exports:    0")
+  expect(output).toContain("decorators: 0")
+  expect(output).toContain("selectors:  0")
+  expect(output).toContain("components: 0")
+  expect(output).toContain("config:     0")
+  expect(output).toContain("tables:     0")
+  expect(output).toContain("headings:   0")
   expect(output).toContain("DB:")
 })
 

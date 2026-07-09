@@ -25,9 +25,10 @@ test("walk: finds code files", () => {
   writeFileSync(join(tmpDir, "test.py"), "def bar(): pass")
   writeFileSync(join(tmpDir, "readme.md"), "# readme")
   const files = walk(tmpDir, new Set())
-  expect(files).toHaveLength(2)
+  expect(files).toHaveLength(3)
   expect(files.some(f => f.endsWith("test.ts"))).toBe(true)
   expect(files.some(f => f.endsWith("test.py"))).toBe(true)
+  expect(files.some(f => f.endsWith("readme.md"))).toBe(true)
 })
 
 test("walk: ignores node_modules and .git", () => {
@@ -56,10 +57,18 @@ test("parseFile: returns chunks for known extension", () => {
   expect(chunks[0].name).toBe("foo")
 })
 
-test("parseFile: returns empty for unknown extension", () => {
-  writeFileSync(join(tmpDir, "test.md"), "# hello")
-  const chunks = parseFile(join(tmpDir, "test.md"))
+test("parseFile: returns chunks for known extension with parser", () => {
+  // .md now has a parser, test with a truly unknown extension
+  writeFileSync(join(tmpDir, "test.unknown"), "some content")
+  const chunks = parseFile(join(tmpDir, "test.unknown"))
   expect(chunks).toHaveLength(0)
+})
+
+test("parseFile: parses .md files", () => {
+  writeFileSync(join(tmpDir, "test.md"), "# Hello")
+  const chunks = parseFile(join(tmpDir, "test.md"))
+  expect(chunks.length).toBeGreaterThanOrEqual(1)
+  expect(chunks[0].type).toBe("heading")
 })
 
 test("indexProject: indexes a directory", () => {
@@ -108,16 +117,17 @@ test("updateFile: updates changed file", () => {
   expect(dbChunkCount(db)).toBe(2)
 })
 
-test("updateFile: ignores non-code files", () => {
-  const fp = join(tmpDir, "readme.md")
-  writeFileSync(fp, "# hello")
-  const result = updateFile(db, fp)
-  expect(result).toBe(false)
-})
-
 test("updateFile: returns false for non-existent file", () => {
   const result = updateFile(db, join(tmpDir, "missing.ts"))
   expect(result).toBe(false)
+})
+
+test("updateFile: parses .md files", () => {
+  const fp = join(tmpDir, "readme.md")
+  writeFileSync(fp, "# Title")
+  const result = updateFile(db, fp)
+  expect(result).toBe(true)
+  expect(dbChunkCount(db)).toBe(1)
 })
 
 test("hash: deterministic MD5", () => {

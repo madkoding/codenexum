@@ -15,5 +15,8 @@ export function goParse(c: string, f: string): Chunk[] {
   const iface = /(?:^|\n)\s*type\s+(\w+)\s+interface\s*\{/g
   while ((m = iface.exec(c)) !== null)
     r.push({ id: `${f}:iface:${m[1]}`, file: f, name: m[1], type: "interface", line: lineOf(c, m.index), content: `interface ${m[1]}` })
+  const im = /(?:^|\n)\s*import\s+(?:\(?\s*['"]([^'"]+)['"]|\w+\s+['"]([^'"]+)['"])/g
+  while ((m = im.exec(c)) !== null)
+    r.push({ id: `${f}:imp:${m[1] || m[2]}`, file: f, name: m[1] || m[2], type: "import", line: lineOf(c, m.index), content: m[0].trim() })
   return r
 }

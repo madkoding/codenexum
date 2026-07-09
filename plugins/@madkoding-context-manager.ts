@@ -57,6 +57,14 @@ const _plugin: Plugin = async ({ client, directory }) => {
           const ifs = chunks.filter(x => x.type === "interface").length
           const types = chunks.filter(x => x.type === "type").length
           const enums = chunks.filter(x => x.type === "enum").length
+          const imp = chunks.filter(x => x.type === "import").length
+          const exp = chunks.filter(x => x.type === "export").length
+          const dec = chunks.filter(x => x.type === "decorator").length
+          const sel = chunks.filter(x => x.type === "selector").length
+          const cmp = chunks.filter(x => x.type === "component").length
+          const cfg = chunks.filter(x => x.type === "config").length
+          const tbl = chunks.filter(x => x.type === "table").length
+          const hdg = chunks.filter(x => x.type === "heading").length
           return [
             `Indexed ${files} files → ${chunks.length} chunks`,
             `  functions:  ${fns}`,
@@ -64,6 +72,14 @@ const _plugin: Plugin = async ({ client, directory }) => {
             `  interfaces: ${ifs}`,
             `  types:      ${types}`,
             `  enums:      ${enums}`,
+            `  imports:    ${imp}`,
+            `  exports:    ${exp}`,
+            `  decorators: ${dec}`,
+            `  selectors:  ${sel}`,
+            `  components: ${cmp}`,
+            `  config:     ${cfg}`,
+            `  tables:     ${tbl}`,
+            `  headings:   ${hdg}`,
             `  DB: ${dbPath}`,
           ].join("\n")
         },

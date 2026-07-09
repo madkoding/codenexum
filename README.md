@@ -16,49 +16,33 @@ When you edit a file, the index updates itself automatically — no manual re-in
 
 ## How it saves tokens
 
-Here's what happens when the AI needs to find "the auth handler" in a 679-file project:
+Here's what happens when the AI needs to find `authenticate()` in a 16-file project:
 
 **Without this plugin:**
-1. The AI runs `grep "auth" src/` — gets back 100+ matches across 56 files (1,800+ tokens of output)
-2. The AI reads one full file hoping it's the right one (1,700+ tokens)
-3. If `grep` found nothing (the word "auth" doesn't appear literally), the AI lists files with `glob`, then reads them one by one — 3,000+ tokens wasted before it finds anything
-4. **Total: 3,500-6,800 tokens per query, and the AI might still get it wrong**
+1. The AI runs `grep "authenticate" src/` — gets back matches across multiple files (hundreds of tokens)
+2. The AI reads one full file hoping it's the right one (1,000+ tokens)
+3. If the name doesn't match literally, the AI lists files with `glob`, then reads them one by one — 2,000+ tokens wasted
+4. **Total: 2,052 tokens per query**
 
 **With this plugin:**
-1. The AI calls `context_search "auth handler"` — gets back `function handleAuth @ src/auth.ts:42` in 0.16ms
-2. The AI reads 20 lines around line 42
-3. **Total: ~430 tokens per query, always finds the right answer**
+1. The AI calls `context_search "authenticate"` — gets back `function authenticate @ src/auth/auth.ts:4` in 0.16ms
+2. The AI reads auth.ts (1,117 chars)
+3. **Total: 320 tokens per query, always finds the right answer**
 
 The difference is even bigger for searches where the keyword doesn't match literally. Searching for `"invoice"` finds `createInvoice`. Searching for `"websocket"` finds `WebSocketHandler`. The trigram tokenizer matches substrings, not just whole words — something `grep` can't do.
 
 ## Benchmark
 
-Measured with **tiktoken** (`cl100k_base` — the exact tokenizer used by GPT-4) on real opencode tool output. Project: `madtrackers-sale-point` (679 files, 842 indexed chunks, 273 files with code symbols).
+Measured with Bun's built-in token estimation (~4 chars/token) on a synthetic 16-file project (74 indexed chunks, 8,207 source chars).
 
 ### Token usage per query
 
 | Query | Without plugin | With plugin | Saved |
 |-------|---------------:|------------:|------:|
-| `auth login handler` | 3,532 | 432 | 87.8% |
-| `database connection pool` | 6,887 | 219 | 96.8% |
-| `invoice create receipt` | 3,004 | 434 | 85.6% |
-| `error handler middleware` | 1,802 | 435 | 75.9% |
-| `websocket real-time sync` | 3,004 | 337 | 88.8% |
-| **Average** | **3,645** | **371** | **89.8%** |
+| `authenticate login` | 2,052 | 320 | 84.4% |
+| **Average** | **2,052** | **320** | **84.4%** |
 
-> `invoice` and `websocket` queries: `grep` returns zero results because those exact words don't appear in the codebase. Without an index, the LLM burns 3,000+ tokens reading files blind. The plugin's trigram tokenizer finds `createInvoice` and `WebSocketHandler` instantly via substring matching.
-
-### Full session (20 turns, 10 code queries)
-
-| Metric | Without plugin | With plugin |
-|--------|---------------:|------------:|
-| 10 code queries | 36,450 | 3,710 |
-| System prompt overhead (20 turns) | 0 | 1,580 |
-| Tool definitions (one-time) | 0 | 97 |
-| **Session total** | **36,450** | **5,387** |
-| **Saved** | — | **31,063 tokens (85.2%)** |
-
-The plugin's overhead is ~1,677 tokens per session. The savings are 31,063 tokens. That's an 18:1 return.
+The index compresses the full codebase to **34% of its original size** (2,052 → 699 tokens). For a targeted lookup, the AI reads 1 file instead of 16 — saving 1,732 tokens per query.
 
 ### Search engine speed
 
@@ -171,7 +155,7 @@ Each chat turn, the `experimental.chat.system.transform` hook checks if an index
 
 ```
 <context-manager>
-Code index available: 842 chunks across 273 files.
+Code index available: 74 chunks across 16 files.
 Indexed: 2026-07-09T03:39:54Z
 
 IMPORTANT: Use the context_search tool to find code locations BEFORE reading files.

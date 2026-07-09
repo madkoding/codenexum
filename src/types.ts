@@ -1,8 +1,10 @@
+export type ChunkType = "function" | "class" | "interface" | "type" | "enum" | "import" | "export" | "decorator" | "selector" | "component" | "config" | "table" | "heading"
+
 export interface Chunk {
   id: string
   file: string
   name: string
-  type: "function" | "class" | "interface" | "type" | "enum"
+  type: ChunkType
   line: number
   content: string
 }
@@ -16,4 +18,8 @@ export const IGNORE = new Set([
 export const CODE_EXTS = new Set([
   ".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java",
   ".rb", ".php", ".c", ".h", ".cpp", ".hpp", ".cs",
+  ".css", ".scss",
+  ".html", ".hbs", ".ejs",
+  ".json", ".yaml", ".yml", ".toml",
+  ".sql", ".md",
 ])
