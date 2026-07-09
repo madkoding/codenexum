@@ -76,13 +76,15 @@ Add the package name to your opencode config file. That's it — opencode instal
 }
 ```
 
+The `npm install` postinstall hook automatically copies a small `context-manager-loading-shim.ts` to `~/.config/opencode/plugins/`. That shim loads instantly on every opencode startup and shows an "Installing plugin…" toast while the main npm plugin is downloading. After the first install, both the shim and the npm cache are warm, and startups are fast.
+
 Restart opencode. The plugin auto-indexes your project in a background worker (does not block the TUI) and copies the bundled `SKILL.md` to `~/.config/opencode/skills/context-manager/` so opencode discovers it without extra config. No manual setup needed.
 
 If you open opencode in a very large directory (e.g. your home), the auto-index is capped at 10,000 files. Pass a narrower path to `context_analyze` for full coverage, or raise the cap with `CONTEXT_MANAGER_MAX_FILES=50000`.
 
-### From source (recommended for first install)
+### From source (alternative)
 
-The npm install above is the simplest path, but the first run will be slow while opencode downloads the package with Bun (the TUI may look frozen for 30–60 seconds). For instant feedback during that first install, run the source installer instead:
+If you prefer to run from a local clone (useful for development or if you don't have npm):
 
 ```bash
 git clone https://github.com/madkoding/opencode-context-manager.git
@@ -90,7 +92,7 @@ cd opencode-context-manager
 ./install.sh
 ```
 
-The installer copies the plugin to `~/.config/opencode/plugins/`, plus a small `context-manager-loading-shim.ts` that loads instantly and shows an "Installing plugin…" toast during the first npm download. After the first run, subsequent startups use the npm cache and are fast.
+The installer copies the plugin and the shim to `~/.config/opencode/plugins/`, installs `@opencode-ai/plugin` via Bun, and adds the plugin to your `opencode.jsonc`. The skill is copied on first plugin load.
 
 Install output is newline-delimited JSON on stderr (parseable with `jq`):
 
@@ -219,6 +221,8 @@ The plugin adds 4 tools that the AI calls directly:
 ```
 plugins/
   @madtech-opencode-context-manager-plugin.ts    # Plugin entry point — tool + hook wiring
+  context-manager-loading-shim.ts                # Local shim — instant-load toast during npm install
+  worker-indexer.ts                              # Background worker for the auto-index
 src/
   types.ts                         # Chunk interface, IGNORE/CODE_EXTS constants
   store.ts                         # SQLite layer (FTS5, CRUD, search, BM25)
@@ -234,22 +238,27 @@ src/
     php.ts                         # phpParse
     cpp.ts                         # cppParse (C + C++)
     csharp.ts                      # csParse
+    formats.ts                     # cssParse, htmlParse, dataParse, sqlParse, mdParse
     index.ts                       # PARSERS map
+skills/
+  context-manager/SKILL.md         # Bundled skill (auto-copied to ~/.config/opencode/skills/)
+scripts/
+  postinstall.sh                   # Runs on npm install — drops the shim into the global plugins dir
 test/
-  parsers.test.ts                  # 36 tests — parser correctness per language
-  store.test.ts                    # 18 tests — SQLite CRUD, FTS5, BM25
-  indexer.test.ts                  # 13 tests — walk, indexProject, updateFile
-  integration.test.ts              # 5 tests — end-to-end index → search → verify
-  contracts.test.ts                # 32 tests — interface/output format stability
+  parsers.test.ts                  # Parser correctness per language
+  store.test.ts                    # SQLite CRUD, FTS5, BM25
+  indexer.test.ts                  # walk, indexProject, updateFile
+  integration.test.ts              # End-to-end index → search → verify
+  contracts.test.ts                # Interface/output format stability
 ```
 
-**104 tests, 0 failures.** Run them with `bun test`.
+**143 tests, 0 failures.** Run them with `bun test`.
 
 The plugin is fully decoupled: parsers are pure functions, the SQLite layer accepts a `Database` instance as a parameter (no globals), and the indexer accepts a database + filesystem path. The entry point wires everything together with opencode's plugin API.
 
 ## Logging
 
-The plugin emits structured logs via `client.app.log()` with `service: "context-manager"`:
+The plugin emits structured logs via `client.app.log()` with `service: "opencode-context-manager-plugin"` (and `service: "context-manager-shim"` for the shim):
 
 | Level | When it fires |
 |-------|---------------|
