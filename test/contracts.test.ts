@@ -316,10 +316,8 @@ test("C8: buildSystemPrompt wraps in <context-manager> tags", () => {
   const prompt = buildSystemPrompt(db)
   expect(prompt.startsWith("<context-manager>")).toBe(true)
   expect(prompt.endsWith("</context-manager>")).toBe(true)
-  expect(prompt).toContain("Code index available:")
   expect(prompt).toContain("chunks")
   expect(prompt).toContain("files")
-  expect(prompt).toContain("Indexed:")
   expect(prompt).toContain("context_search")
 })
 

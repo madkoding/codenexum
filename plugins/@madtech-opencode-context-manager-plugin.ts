@@ -8,6 +8,9 @@ import {
 } from "../src/store"
 import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn } from "../src/indexer"
 import { buildSystemPrompt } from "../src/prompt"
+import { compressToolOutput } from "../src/compress"
+import { recordTokens, getFillRatio, clearSession } from "../src/budget"
+import { compactMessages } from "../src/compact"
 
 const SHIM_SOURCE = `import type { Plugin } from "@opencode-ai/plugin"
 
@@ -197,7 +200,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
   return {
     tool: {
       context_analyze: tool({
-        description: "Index a project: walk code files, extract functions/classes/interfaces/types/enums, store in a searchable index. Runs automatically on first load. Use this to re-index or index a specific path.",
+        description: "Re-index the project. Walks code files, extracts symbols, stores in SQLite. Runs automatically on first load.",
         args: {
           path: tool.schema.string().optional().describe("Project path. Default: current session directory."),
         },
@@ -250,32 +253,39 @@ const _plugin: Plugin = async ({ client, directory }) => {
         },
       }),
       context_search: tool({
-        description: "Search indexed code by keyword or phrase. Use context_analyze first to build the index. Prefer this over reading files blindly to save tokens.",
+        description: "Search indexed code by keyword. Prefer this over reading files blindly. Returns type name @ file:line ranked by BM25.",
         args: {
           query: tool.schema.string().describe("Search query (e.g. 'auth handler', 'validate function')"),
           n: tool.schema.number().optional().default(10).describe("Max results (default 10)"),
+          compact: tool.schema.boolean().optional().describe("Omit content, return only 'type name @ file:line' per result. Defaults to true when n>5."),
         },
         async execute(args) {
           if (!state.db) return "Plugin still initializing. Try again in a second."
           if (dbChunkCount(state.db) === 0) return "No index. Run context_analyze first."
           if (args.query.trim().length < 2) return "Query too short. Use at least 2 characters."
-          const results = dbSearch(state.db, args.query, args.n || 10)
+          const limit = args.n || 10
+          const results = dbSearch(state.db, args.query, limit)
           if (!results.length) return "No matches found."
           const projectRoot = dbGetMeta(db, "projectRoot") || ""
+          const isCompact = args.compact ?? limit > 5
           return results.map((r) => {
             const rel = relative(projectRoot, r.file)
-            return `${r.type} ${r.name} @ ${rel}:${r.line}\n  ${r.content}`
+            return isCompact
+              ? `${r.type} ${r.name} @ ${rel}:${r.line}`
+              : `${r.type} ${r.name} @ ${rel}:${r.line}\n  ${r.content}`
           }).join("\n\n")
         },
       }),
       context_stats: tool({
-        description: "Show indexing statistics from the last context_analyze run.",
+        description: "Show index stats: project root, timestamp, chunk counts by language, context fill %.",
         args: {},
-        async execute() {
+        async execute(args, c) {
           if (!state.db) return "Plugin still initializing. Try again in a second."
           const count = dbChunkCount(state.db)
           if (!count) return "No index. Run context_analyze first."
           const byLang = dbStatsByLang(state.db)
+          const sid = (c as any)?.sessionID
+          const fill = getFillRatio(sid)
           const lines = [
             `Project: ${dbGetMeta(state.db, "projectRoot")}`,
             `Indexed: ${dbGetMeta(state.db, "indexedAt")}`,
@@ -284,6 +294,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
           for (const { ext, n } of byLang)
             lines.push(`  ${ext}: ${n}`)
           lines.push(`Files:   ${dbFileCount(state.db)}`)
+          lines.push(`Context fill: ${(fill * 100).toFixed(0)}%`)
           return lines.join("\n")
         },
       }),
@@ -299,6 +310,10 @@ const _plugin: Plugin = async ({ client, directory }) => {
     },
     async event({ event }) {
       if (!state.db) return
+      if (event.type === "message.updated" && event.properties?.tokens) {
+        const t = event.properties.tokens as { input?: number; output?: number }
+        recordTokens(event.properties.sessionID, t.input || 0, t.output || 0)
+      }
       if (event.type === "file.edited" && event.properties?.file) {
         debouncedUpdateFile(state.db, event.properties.file, 500, log)
       }
@@ -325,6 +340,23 @@ const _plugin: Plugin = async ({ client, directory }) => {
       }
       const prompt = buildSystemPrompt(state.db, state.ready)
       if (prompt) output.system.push(prompt)
+    },
+    async "experimental.chat.messages.transform"(_input, output) {
+      const msgs = (output as { messages: { info: { role?: string; sessionID?: string }; parts: any[] }[] }).messages
+      if (!Array.isArray(msgs) || msgs.length === 0) return
+      const sid = msgs[0]?.info?.sessionID
+      const fill = getFillRatio(sid)
+      const n = compactMessages(msgs as any, fill)
+      if (n > 0) log("info", "compacted old tool outputs", { count: n, fillRatio: fill })
+    },
+    async "tool.execute.after"(input, output) {
+      const t = (input as { tool?: string })?.tool || ""
+      if (!["read", "bash", "grep", "glob"].includes(t)) return
+      const cur = (output as { output?: string }).output
+      if (typeof cur === "string" && cur.length > 0) {
+        const compressed = compressToolOutput(t, cur)
+        if (compressed !== cur) (output as { output: string }).output = compressed
+      }
     },
   }
 }

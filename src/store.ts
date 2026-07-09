@@ -21,11 +21,21 @@ export function initSchema(db: Database): void {
   db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
 }
 
+const MAX_CONTENT = 200
+
+function truncate(s: string, max = MAX_CONTENT): string {
+  return s.length <= max ? s : s.slice(0, max) + "…"
+}
+
 export function dbInsertChunks(db: Database, chunks: Chunk[]): void {
+  const seen = new Set<string>()
   const tx = db.transaction(() => {
     for (const c of chunks) {
+      const key = `${c.file}\u0000${c.name}\u0000${c.type}`
+      if (seen.has(key)) continue
+      seen.add(key)
       db.run("INSERT INTO chunks_fts (name, content, id, file, type, line) VALUES (?,?,?,?,?,?)",
-        c.name, c.content, c.id, c.file, c.type, c.line)
+        c.name, truncate(c.content), c.id, c.file, c.type, c.line)
     }
   })
   tx()

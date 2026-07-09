@@ -16,12 +16,8 @@ export function buildSystemPrompt(db: Database, ready = true): string {
   const indexedAt = dbGetMeta(db, "indexedAt") || "unknown"
   return [
     `<context-manager>`,
-    `Code index available: ${count} chunks across ${fileCount} files.`,
-    `Indexed: ${indexedAt}`,
-    ``,
-    `IMPORTANT: Use the context_search tool to find code locations BEFORE reading files.`,
-    `This saves tokens — search returns function/class names with line numbers,`,
-    `so you can read only the specific file and section you need.`,
+    `Index: ${count} chunks / ${fileCount} files @ ${indexedAt}.`,
+    `Use context_search before reading files to find exact locations.`,
     `</context-manager>`,
   ].join("\n")
 }
