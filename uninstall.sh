@@ -32,6 +32,12 @@ if [ -f "$PLUGIN_FILE" ]; then
   log info "plugin removed" file "$PLUGIN_FILE"
 fi
 
+# ── Remove source files ──
+if [ -d "$PLUGIN_DIR/src" ]; then
+  rm -rf "$PLUGIN_DIR/src"
+  log info "source removed" dir "$PLUGIN_DIR/src"
+fi
+
 # ── Remove skill ──
 if [ -d "$SKILL_DIR" ]; then
   rm -rf "$SKILL_DIR"

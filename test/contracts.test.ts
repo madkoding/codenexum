@@ -369,14 +369,31 @@ test("C9: buildFtsQuery produces valid FTS5 MATCH syntax (no syntax errors)", ()
 })
 
 // ═══════════════════════════════════════════════════════════════
-// C10: Plugin export contract — opencode expects { id, server }
+// C10: Plugin export contract — opencode expects a Plugin function
 // ═══════════════════════════════════════════════════════════════
-test("C10: plugin exports default with id and server function", async () => {
+test("C10: plugin exports default as a Plugin function", async () => {
   const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
-  expect(src).toContain('export default')
-  expect(src).toContain('id:')
-  expect(src).toContain('server:')
-  expect(src).toContain('_plugin')
+  expect(src).toContain('export default _plugin')
+  expect(src).toContain('const _plugin: Plugin =')
+})
+
+// ═══════════════════════════════════════════════════════════════
+// C10b: Self-contained skill install — plugin must auto-copy SKILL.md
+// to ~/.config/opencode/skills/context-manager/ on first load
+// ═══════════════════════════════════════════════════════════════
+test("C10b: plugin auto-copies SKILL.md to global skills dir", async () => {
+  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  expect(src).toContain("skills/context-manager")
+  expect(src).toContain("copyFileSync")
+  expect(src).toContain("skillDst")
+})
+
+test("C10c: bundled SKILL.md exists at skills/context-manager/SKILL.md", async () => {
+  const skill = Bun.file("./skills/context-manager/SKILL.md")
+  expect(await skill.exists()).toBe(true)
+  const text = await skill.text()
+  expect(text).toContain("name: context-manager")
+  expect(text).toContain("description:")
 })
 
 // ═══════════════════════════════════════════════════════════════

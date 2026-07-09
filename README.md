@@ -76,7 +76,7 @@ Add the package name to your opencode config file. That's it — opencode instal
 }
 ```
 
-Restart opencode. The plugin auto-indexes your project on first load. No manual setup needed.
+Restart opencode. The plugin auto-indexes your project on first load and copies the bundled `SKILL.md` to `~/.config/opencode/skills/context-manager/` so opencode discovers it without extra config. No manual setup needed.
 
 ### From source (alternative)
 
@@ -88,7 +88,7 @@ cd opencode-context-manager
 ./install.sh
 ```
 
-The installer copies the plugin to `~/.config/opencode/plugins/`, copies the skill to `~/.config/opencode/skills/context-manager/`, installs `@opencode-ai/plugin` via Bun, and adds the plugin to your `opencode.jsonc`.
+The installer copies the plugin to `~/.config/opencode/plugins/`, installs `@opencode-ai/plugin` via Bun, and adds the plugin to your `opencode.jsonc`. The skill is copied on first plugin load.
 
 Install output is newline-delimited JSON on stderr (parseable with `jq`):
 
@@ -99,7 +99,7 @@ Install output is newline-delimited JSON on stderr (parseable with `jq`):
 
 ### Uninstall
 
-**npm:** Remove `"madkoding-context-manager"` from your `plugin` array and restart.
+**npm:** Remove `"madkoding-context-manager"` from your `plugin` array and restart. To also remove the auto-installed skill, run `rm -rf ~/.config/opencode/skills/context-manager`.
 
 **Source:** Run `./uninstall.sh` from the cloned repo.
 

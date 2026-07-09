@@ -1,7 +1,7 @@
 import { tool, type Plugin } from "@opencode-ai/plugin"
 import { Database } from "bun:sqlite"
 import { join, isAbsolute, relative, extname } from "path"
-import { existsSync, mkdirSync, unlinkSync } from "fs"
+import { existsSync, mkdirSync, unlinkSync, copyFileSync } from "fs"
 import {
   initSchema, dbInsertChunks, dbDeleteFile, dbSetFileHash, dbSetMeta,
   dbGetMeta, dbChunkCount, dbFileCount, dbSearch, dbClear, dbStatsByLang,
@@ -26,14 +26,35 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const db = new Database(dbPath)
   initSchema(db)
 
+  const skillDstDir = join(HOME, ".config/opencode/skills/context-manager")
+  const skillDst = join(skillDstDir, "SKILL.md")
+  if (!existsSync(skillDst)) {
+    const skillSrc = join(import.meta.dir, "..", "skills", "context-manager", "SKILL.md")
+    if (existsSync(skillSrc)) {
+      try {
+        mkdirSync(skillDstDir, { recursive: true })
+        copyFileSync(skillSrc, skillDst)
+        log("info", "skill auto-installed", { file: skillDst })
+      } catch (e) {
+        log("warn", "skill auto-install failed", { error: String(e) })
+      }
+    }
+  }
+
   if (dbChunkCount(db) === 0) {
-    log("info", "auto-analyzing project", { directory })
-    const { files, chunks, fileHashes } = indexProject(directory)
-    dbInsertChunks(db, chunks)
-    for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
-    dbSetMeta(db, "projectRoot", directory)
-    dbSetMeta(db, "indexedAt", new Date().toISOString())
-    log("info", "auto-analyzed project", { files, chunks: chunks.length })
+    log("info", "auto-analyzing project (async)", { directory })
+    queueMicrotask(() => {
+      try {
+        const { files, chunks, fileHashes } = indexProject(directory)
+        dbInsertChunks(db, chunks)
+        for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
+        dbSetMeta(db, "projectRoot", directory)
+        dbSetMeta(db, "indexedAt", new Date().toISOString())
+        log("info", "auto-analyzed project", { files, chunks: chunks.length })
+      } catch (e) {
+        log("error", "auto-analyze failed", { error: String(e) })
+      }
+    })
   }
 
   return {
@@ -151,4 +172,4 @@ const _plugin: Plugin = async ({ client, directory }) => {
   }
 }
 
-export default { id: "@madkoding/context-manager", server: _plugin }
+export default _plugin

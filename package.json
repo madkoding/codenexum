@@ -1,15 +1,17 @@
 {
   "name": "madkoding-context-manager",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "opencode plugin for context management in large projects",
   "license": "MIT",
   "main": "plugins/@madkoding-context-manager.ts",
   "exports": {
+    ".": "./plugins/@madkoding-context-manager.ts",
     "./server": "./plugins/@madkoding-context-manager.ts"
   },
   "files": [
     "plugins/",
-    "src/"
+    "src/",
+    "skills/"
   ],
   "scripts": {
     "test": "bun test",

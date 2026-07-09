@@ -33,12 +33,11 @@ mkdir -p "$PLUGIN_DIR"
 cp "$REPO_DIR/plugins/@madkoding-context-manager.ts" "$PLUGIN_DIR/@madkoding-context-manager.ts"
 log info "plugin copied" file "$PLUGIN_DIR/@madkoding-context-manager.ts"
 
-# ── 2. Skill ──
-mkdir -p "$SKILL_DIR"
-cp "$REPO_DIR/SKILL.md" "$SKILL_DIR/SKILL.md"
-log info "skill copied" file "$SKILL_DIR/SKILL.md"
+# ── 1b. Source files (needed for relative imports) ──
+cp -r "$REPO_DIR/src" "$PLUGIN_DIR/src"
+log info "source copied" dir "$PLUGIN_DIR/src"
 
-# ── 3. Ensure @opencode-ai/plugin is installed ──
+# ── 2. Ensure @opencode-ai/plugin is installed ──
 if [ ! -d "$OPENCODE_DIR/node_modules/@opencode-ai/plugin" ]; then
   log warn "plugin dependency missing" package "@opencode-ai/plugin"
   if [ ! -f "$OPENCODE_DIR/package.json" ]; then
@@ -59,7 +58,7 @@ if [ ! -d "$OPENCODE_DIR/node_modules/@opencode-ai/plugin" ]; then
   fi
 fi
 
-# ── 4. Add plugin to opencode config ──
+# ── 3. Add plugin to opencode config ──
 add_plugin_to_config() {
   local cfg="$1" rel="$2" name="$3"
   bun -e '
