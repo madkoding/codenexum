@@ -6,7 +6,7 @@ A native TypeScript plugin that gives opencode a **searchable code index** and a
 
 ## Why you need this
 
-As projects grow, the AI's context window fills up fast. Without an index, opencode has to `grep` + `read` whole files just to find one function — burning tokens on imports, comments, and code it never needed. On a 679-file project, a single "where is the auth logic?" question can waste 5,000+ tokens; when `grep` fails (keywords don't match literally), the LLM reads files blind and burns 15,000+.
+As projects grow, the AI's context window fills up fast. Without an index, opencode has to `grep` + `read` whole files just to find one function — burning tokens on imports, comments, and code it never needed. On a 679-file project, a single "where is the auth logic?" question wastes 3,500+ tokens; when `grep` fails (keywords don't match literally), the LLM falls back to `glob` + blind reads, burning 3,000+ more.
 
 **context-manager fixes this by:**
 
@@ -15,60 +15,58 @@ As projects grow, the AI's context window fills up fast. Without an index, openc
 3. **Staying in sync automatically** — every file edit, create, or delete re-indexes just that file (500ms debounce, content-hash diff). No manual re-runs.
 4. **Guiding the AI to compress** — an injected system prompt + SKILL.md teach the AI to classify files into three detail tiers (active / dependencies / rest-of-repo) and strip content when context gets tight.
 
-**Real-world savings:** on a typical mid-size project (~150 files), searching instead of blind-reading saves ~90% tokens per lookup. Over a long session, that's the difference between a productive hour and hitting the context limit mid-task.
+**Measured savings:** 86.5% average token reduction per query on a real 679-file project (tiktoken-verified, see benchmark below).
 
 ## Benchmark: real token savings
 
-Measured on a real project (`madtrackers-sale-point`: 679 files, 842 chunks indexed). Each query simulates a typical user question — "where is the auth logic?" — and compares two approaches:
+Measured with **tiktoken** (`cl100k_base` — the tokenizer used by GPT-4/Claude-class models) on real opencode tool output. Project: `madtrackers-sale-point` (679 files, 842 chunks indexed). Each query simulates a typical user question and compares two approaches:
 
-- **Without plugin (grep + blind read):** the LLM runs `grep` to find candidate files, then reads 3 full files to locate the function. When `grep` finds nothing (keywords don't match literally), the LLM falls back to listing directories and reading files blind — far more expensive.
-- **With plugin (search + targeted read):** `context_search` returns exact file + line in milliseconds, then the LLM reads ~20 lines around that location.
+- **Without plugin:** the LLM runs `grep` to find candidate files, then reads 1 full file. When `grep` returns nothing (keywords don't match literally), the LLM falls back to `glob` + 3 blind file reads — modeled here because that's what actually happens.
+- **With plugin:** `context_search` returns exact file + line, then the LLM reads ~20 lines around that location.
 
 ### Per-query comparison
 
 | Query | Without plugin (tokens) | With plugin (tokens) | Saved | % |
 |-------|------------------------:|---------------------:|------:|--:|
-| `auth login handler` | 5,075 | 101 | 4,974 | 98.0% |
-| `database connection pool` | 1,942 | 112 | 1,830 | 94.2% |
-| `invoice create receipt` | 15,000 | 130 | 14,870 | 99.1% |
-| `error handler middleware` | 1,326 | 117 | 1,209 | 91.2% |
-| `websocket real-time sync` | 15,000 | 72 | 14,928 | 99.5% |
-| **TOTAL (5 queries)** | **38,343** | **532** | **37,811** | **98.6%** |
-| **Average per query** | **7,668** | **106** | **7,562** | — |
+| `auth login handler` | 3,532 | 531 | 3,001 | 85.0% |
+| `database connection pool` | 6,887 | 453 | 6,434 | 93.4% |
+| `invoice create receipt` | 3,004 | 669 | 2,335 | 77.7% |
+| `error handler middleware` | 1,802 | 480 | 1,322 | 73.4% |
+| `websocket real-time sync` | 3,004 | 337 | 2,667 | 88.8% |
+| **TOTAL (5 queries)** | **18,229** | **2,470** | **15,759** | **86.5%** |
+| **Average per query** | **3,645** | **494** | **3,151** | — |
 
-> **Note:** `invoice` and `websocket` queries show 15,000 tokens "without plugin" because `grep` returns zero results (those exact words don't appear in the codebase). Without an index, the LLM has no choice but to read files blind — directories, file lists, random files — until it stumbles on the right one. The plugin's partial-token matching finds them instantly.
+> **Note:** `invoice` and `websocket` queries: `grep` returns zero results (those exact words don't appear in the codebase). Without an index, the LLM runs `glob` (1,088 tokens of file listing) then reads 3 files blind (1,912 tokens) before finding anything — or gives up and asks the user. The plugin's partial-token matching finds the right function in one call.
 
 ### Session projection (20 turns, 10 code queries)
 
 | Metric | Without plugin | With plugin | Saved |
 |--------|--------------:|------------:|------:|
-| 10 code queries | 76,680 | 1,060 | 75,620 |
-| System prompt (20 turns) | 0 | 1,240 | -1,240 |
-| Tool definitions (one-time) | 0 | 200 | -200 |
-| **Session total** | **76,680** | **2,500** | **74,180 (96.7%)** |
+| 10 code queries | 36,450 | 4,940 | 31,510 |
+| System prompt (20 turns) | 0 | 1,580 | -1,580 |
+| Tool definitions (one-time) | 0 | 100 | -100 |
+| **Session total** | **36,450** | **6,620** | **29,830 (81.8%)** |
 
-The plugin's overhead (system prompt injection + tool definitions) is ~1,440 tokens total — dwarfed by the 74,180 tokens saved on code lookups.
+The plugin's overhead (system prompt injection + tool definitions) is ~1,680 tokens per session — dwarfed by the 29,830 tokens saved on code lookups.
 
 ### What "without plugin" actually costs
 
 When the LLM needs to find code without an index, it does one of:
 
-1. **`grep` + read 3-5 full files** — works when keywords match literally, but still reads 1,000-5,000 tokens of irrelevant code per query.
-2. **`glob` + read files one by one** — when `grep` fails, the LLM lists files and reads them blind. On a 679-file project, this can burn 15,000+ tokens before finding the right function.
-3. **Ask the user** — worst case: the LLM gives up and asks "which file has the auth logic?", costing a round-trip and user patience.
+1. **`grep` + read 1-3 full files** — works when keywords match literally, but still reads 1,700-6,800 tokens of irrelevant code per query.
+2. **`glob` + read files blind** — when `grep` fails, the LLM lists files (1,088 tokens) and reads them one by one. On a 679-file project, this burns 3,000+ tokens before finding the right function — or the LLM gives up.
+3. **Ask the user** — worst case: the LLM asks "which file has the auth logic?", costing a round-trip and user patience.
 
 The plugin eliminates all three by providing a pre-built index that the LLM queries in one tool call.
 
 ### How the benchmark was measured
 
+- **Tokenizer:** tiktoken `cl100k_base` (exact tokenizer used by GPT-4, not an approximation)
 - **Project:** `madtrackers-sale-point` (Next.js, 679 code files, 842 indexed chunks)
-- **Token estimation:** word count / 0.75 (standard approximation for English + code)
-- **Without plugin:** `grep -rn <keyword> src/` output tokens + reading 3 full files from results
-- **With plugin:** `context_search` output (5 results × ~10 tokens each) + reading 20 lines around the best match
-- **System prompt overhead:** the `<context-manager>` block injected each turn (~62 tokens)
-- **Tool overhead:** 4 tool definitions sent once per session (~200 tokens)
-
-Benchmark run live inside opencode — the AI you're reading right now used `context_search` to write this section.
+- **Without plugin:** `grep -rn <keyword> src/` output + reading 1 full file from results. When grep returns nothing: `glob` output + 3 blind file reads (realistic fallback behavior)
+- **With plugin:** `context_search` output (5 results) + reading 20 lines around the best match
+- **System prompt overhead:** the `<context-manager>` block injected each turn (79 tokens)
+- **Tool overhead:** 4 tool definitions sent once per session (100 tokens)
 
 ## What's included
 
