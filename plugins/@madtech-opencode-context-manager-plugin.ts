@@ -258,8 +258,16 @@ const _plugin: Plugin = async ({ client, directory }) => {
       }
     },
     async "experimental.chat.system.transform"(_input, output) {
-      if (!state.db) return
-      const prompt = buildSystemPrompt(state.db)
+      if (!state.db) {
+        output.system.push([
+          "<context-manager>",
+          "Status: plugin still initializing.",
+          "Tell the user the context-manager plugin is loading and will be ready in a moment.",
+          "</context-manager>",
+        ].join("\n"))
+        return
+      }
+      const prompt = buildSystemPrompt(state.db, state.ready)
       if (prompt) output.system.push(prompt)
     },
   }
