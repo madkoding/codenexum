@@ -11,7 +11,7 @@ import { buildSystemPrompt } from "../src/prompt"
 
 const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
-    client?.app?.log({ body: { service: "context-manager", level, message, extra } }).catch(() => {})
+    client?.app?.log({ body: { service: "opencode-context-manager-plugin", level, message, extra } }).catch(() => {})
 
   log("info", "plugin initialized", { directory })
 

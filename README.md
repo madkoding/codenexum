@@ -63,7 +63,7 @@ Add the package name to your opencode config file. That's it — opencode instal
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["madkoding-context-manager"]
+  "plugin": ["@madtech/opencode-context-manager-plugin"]
 }
 ```
 
@@ -72,7 +72,7 @@ Add the package name to your opencode config file. That's it — opencode instal
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["madkoding-context-manager"]
+  "plugin": ["@madtech/opencode-context-manager-plugin"]
 }
 ```
 
@@ -101,7 +101,7 @@ Install output is newline-delimited JSON on stderr (parseable with `jq`):
 
 ### Uninstall
 
-**npm:** Remove `"madkoding-context-manager"` from your `plugin` array and restart. To also remove the auto-installed skill, run `rm -rf ~/.config/opencode/skills/context-manager`.
+**npm:** Remove `"@madtech/opencode-context-manager-plugin"` from your `plugin` array and restart. To also remove the auto-installed skill, run `rm -rf ~/.config/opencode/skills/context-manager`.
 
 **Source:** Run `./uninstall.sh` from the cloned repo.
 
@@ -209,7 +209,7 @@ The plugin adds 4 tools that the AI calls directly:
 
 ```
 plugins/
-  @madkoding-context-manager.ts    # Plugin entry point — tool + hook wiring
+  @madtech-opencode-context-manager-plugin.ts    # Plugin entry point — tool + hook wiring
 src/
   types.ts                         # Chunk interface, IGNORE/CODE_EXTS constants
   store.ts                         # SQLite layer (FTS5, CRUD, search, BM25)

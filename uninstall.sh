@@ -5,8 +5,8 @@ OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
 SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
-PLUGIN_FILE="$PLUGIN_DIR/@madkoding-context-manager.ts"
-PLUGIN_NAME="madkoding-context-manager"
+PLUGIN_FILE="$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
+PLUGIN_NAME="@madtech/opencode-context-manager-plugin"
 
 log() {
   local level="$1" msg="$2"; shift 2

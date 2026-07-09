@@ -372,7 +372,7 @@ test("C9: buildFtsQuery produces valid FTS5 MATCH syntax (no syntax errors)", ()
 // C10: Plugin export contract — opencode expects a Plugin function
 // ═══════════════════════════════════════════════════════════════
 test("C10: plugin exports default as a Plugin function", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain('export default _plugin')
   expect(src).toContain('const _plugin: Plugin =')
 })
@@ -382,7 +382,7 @@ test("C10: plugin exports default as a Plugin function", async () => {
 // to ~/.config/opencode/skills/context-manager/ on first load
 // ═══════════════════════════════════════════════════════════════
 test("C10b: plugin auto-copies SKILL.md to global skills dir", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain("skills/context-manager")
   expect(src).toContain("copyFileSync")
   expect(src).toContain("skillDst")
@@ -400,7 +400,7 @@ test("C10c: bundled SKILL.md exists at skills/context-manager/SKILL.md", async (
 // C11: Tool names contract — the LLM calls these by exact name
 // ═══════════════════════════════════════════════════════════════
 test("C11: plugin exposes exactly 4 tools with correct names", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain("context_analyze: tool({")
   expect(src).toContain("context_search: tool({")
   expect(src).toContain("context_stats: tool({")
@@ -411,7 +411,7 @@ test("C11: plugin exposes exactly 4 tools with correct names", async () => {
 // C12: Tool args contract — args must match what opencode sends
 // ═══════════════════════════════════════════════════════════════
 test("C12: context_search requires 'query' arg and optional 'n'", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain('query: tool.schema.string()')
   expect(src).toContain('n: tool.schema.number()')
   expect(src).toContain('.optional()')
@@ -419,7 +419,7 @@ test("C12: context_search requires 'query' arg and optional 'n'", async () => {
 })
 
 test("C12: context_analyze has optional 'path' arg", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain('path: tool.schema.string()')
   expect(src).toContain('.optional()')
 })
@@ -428,12 +428,12 @@ test("C12: context_analyze has optional 'path' arg", async () => {
 // C13: Hook names contract — opencode calls these hooks by name
 // ═══════════════════════════════════════════════════════════════
 test("C13: plugin registers 'event' hook", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain("async event(")
 })
 
 test("C13: plugin registers 'experimental.chat.system.transform' hook", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain('experimental.chat.system.transform')
 })
 
@@ -441,22 +441,22 @@ test("C13: plugin registers 'experimental.chat.system.transform' hook", async ()
 // C14: Error message contracts — these exact strings are returned
 // ═══════════════════════════════════════════════════════════════
 test("C14: 'no index' error message is stable", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain("No index. Run context_analyze first.")
 })
 
 test("C14: 'query too short' error message is stable", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain("Query too short. Use at least 2 characters.")
 })
 
 test("C14: 'no matches' error message is stable", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain("No matches found.")
 })
 
 test("C14: 'index cleared' success message is stable", async () => {
-  const src = await Bun.file("./plugins/@madkoding-context-manager.ts").text()
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
   expect(src).toContain("Index cleared.")
 })
 
@@ -464,13 +464,13 @@ test("C14: 'index cleared' success message is stable", async () => {
 // C15: Storage path contract — DB file location
 // ═══════════════════════════════════════════════════════════════
 test("C15: DB path is under ~/.cache/opencode/context-manager.sqlite", () => {
-  const src = require("fs").readFileSync("./plugins/@madkoding-context-manager.ts", "utf-8")
+  const src = require("fs").readFileSync("./plugins/@madtech-opencode-context-manager-plugin.ts", "utf-8")
   expect(src).toContain("context-manager.sqlite")
   expect(src).toContain(".cache/opencode")
 })
 
 test("C15: old JSON path is cleaned up on init", () => {
-  const src = require("fs").readFileSync("./plugins/@madkoding-context-manager.ts", "utf-8")
+  const src = require("fs").readFileSync("./plugins/@madtech-opencode-context-manager-plugin.ts", "utf-8")
   expect(src).toContain("context-manager.json")
   expect(src).toContain("unlinkSync")
 })

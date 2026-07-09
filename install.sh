@@ -5,8 +5,8 @@ OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
 SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
-PLUGIN_REL="./plugins/@madkoding-context-manager.ts"
-PLUGIN_NAME="madkoding-context-manager"
+PLUGIN_REL="./plugins/@madtech-opencode-context-manager-plugin.ts"
+PLUGIN_NAME="@madtech/opencode-context-manager-plugin"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_PKG="$REPO_DIR/package.json"
 
@@ -30,8 +30,8 @@ log info "installer started" target "$OPENCODE_DIR"
 
 # ── 1. Plugin file ──
 mkdir -p "$PLUGIN_DIR"
-cp "$REPO_DIR/plugins/@madkoding-context-manager.ts" "$PLUGIN_DIR/@madkoding-context-manager.ts"
-log info "plugin copied" file "$PLUGIN_DIR/@madkoding-context-manager.ts"
+cp "$REPO_DIR/plugins/@madtech-opencode-context-manager-plugin.ts" "$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
+log info "plugin copied" file "$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
 
 # ── 1b. Source files (needed for relative imports) ──
 cp -r "$REPO_DIR/src" "$PLUGIN_DIR/src"
