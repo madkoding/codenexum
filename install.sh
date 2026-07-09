@@ -4,11 +4,14 @@ set -euo pipefail
 OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
 SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
+CONFIG="$OPENCODE_DIR/opencode.jsonc"
+PLUGIN_REL="./plugins/@madkoding-context-manager.ts"
+PLUGIN_NAME="madkoding-context-manager"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "╔═══════════════════════════════════════════════════════╗
-║  context-manager — opencode plugin installer          ║
-╚═══════════════════════════════════════════════════════╝"
+echo "╔═══════════════════════════════════════════════════════╗"
+echo "║  context-manager — opencode plugin installer          ║"
+echo "╚═══════════════════════════════════════════════════════╝"
 echo
 echo "  Target: $OPENCODE_DIR"
 echo
@@ -39,37 +42,58 @@ if [ ! -d "$OPENCODE_DIR/node_modules/@opencode-ai/plugin" ]; then
   fi
 fi
 
-# ── 4. Add plugin to opencode.jsonc if missing ──
-CONFIG="$OPENCODE_DIR/opencode.jsonc"
-PLUGIN_ENTRY="$PLUGIN_DIR/@madkoding-context-manager.ts"
+# ── 4. Add plugin to opencode config ──
+# Use bun to edit JSON robustly (handles comments in jsonc, commas, arrays).
+add_plugin_to_config() {
+  local cfg="$1" rel="$2" name="$3"
+  bun -e '
+    const fs = require("fs");
+    const path = "'"$cfg"'";
+    const rel = "'"$rel"'";
+    const name = "'"$name"'";
+    let txt = fs.existsSync(path) ? fs.readFileSync(path, "utf8") : null;
+
+    // Already present? (match by name substring)
+    if (txt && txt.includes(name)) { console.log("  ✓ Plugin already in config"); process.exit(0); }
+
+    // Build a JS object from the config if it exists, else start fresh.
+    let obj = {};
+    if (txt && txt.trim() !== "") {
+      try { obj = JSON.parse(txt); }
+      catch (e) {
+        // jsonc with comments: strip // and /* */ then parse
+        const stripped = txt
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/(^|[^:])\/\/.*$/gm, "$1");
+        try { obj = JSON.parse(stripped); } catch (e2) {
+          console.error("  ✗ Could not parse " + path + " as JSON/JSONC");
+          process.exit(1);
+        }
+      }
+    }
+
+    if (!Array.isArray(obj.plugin)) obj.plugin = [];
+    if (!obj.plugin.includes(rel)) obj.plugin.push(rel);
+
+    // Preserve jsonc with $schema if creating fresh.
+    if (!txt || txt.trim() === "") {
+      obj["$schema"] = "https://opencode.ai/config.json";
+    }
+
+    const out = JSON.stringify(obj, null, 2) + "\n";
+    fs.writeFileSync(path, out, "utf8");
+    console.log("  ✓ Added to plugin array in " + path);
+  '
+}
 
 if [ -f "$CONFIG" ]; then
-  if grep -q "madkoding-context-manager" "$CONFIG" 2>/dev/null; then
-    echo "  ✓ Plugin already in config"
-  else
-    # Try to add to existing plugin array
-    if grep -q '"plugin"' "$CONFIG" 2>/dev/null; then
-      # Insert after the last entry in the plugin array
-      sed -i "/\"plugin\"/,/]/ s|]|  \"$PLUGIN_ENTRY\"\n]|" "$CONFIG" 2>/dev/null || true
-      if grep -q "madkoding-context-manager" "$CONFIG" 2>/dev/null; then
-        echo "  ✓ Added to plugin array in $CONFIG"
-      else
-        echo
-        echo "  ⚠ Could not auto-edit config. Add this to the \"plugin\" array in $CONFIG:"
-        echo "    \"$PLUGIN_ENTRY\""
-      fi
-    else
-      echo
-      echo "  ⚠ No \"plugin\" key in config. Add this to $CONFIG:"
-      echo "    \"plugin\": [\"$PLUGIN_ENTRY\"]"
-    fi
-  fi
+  add_plugin_to_config "$CONFIG" "$PLUGIN_REL" "$PLUGIN_NAME"
 else
   # Create minimal config
   cat > "$CONFIG" <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
-  "plugin": ["$PLUGIN_ENTRY"]
+  "plugin": ["$PLUGIN_REL"]
 }
 EOF
   echo "  ✓ Created $CONFIG"
