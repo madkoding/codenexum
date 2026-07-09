@@ -193,11 +193,14 @@ function parseFile(fp: string): Chunk[] {
   return p(readFileSync(fp, "utf-8"), fp)
 }
 
-function updateFile(fp: string): boolean {
+function updateFile(fp: string, log?: (level: string, msg: string, extra?: Record<string, unknown>) => void): boolean {
   const ext = extname(fp)
   if (!CODE_EXTS.has(ext)) return false
   let content: string
-  try { content = readFileSync(fp, "utf-8") } catch { return false }
+  try { content = readFileSync(fp, "utf-8") } catch {
+    log?.("warn", "failed to read file", { file: fp })
+    return false
+  }
   const h = hash(content)
   const db = load()
   if (db.fileHashes[fp] === h) return false
@@ -206,6 +209,7 @@ function updateFile(fp: string): boolean {
   db.chunks.push(...newChunks)
   db.fileHashes[fp] = h
   save(db)
+  log?.("debug", "reindexed file", { file: fp, chunks: newChunks.length })
   return true
 }
 
@@ -233,11 +237,11 @@ function search(chunks: Chunk[], query: string, n: number): Chunk[] {
 }
 
 const _debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {}
-function debouncedUpdateFile(fp: string, ms = 500) {
+function debouncedUpdateFile(fp: string, ms = 500, log?: (level: string, msg: string, extra?: Record<string, unknown>) => void) {
   if (_debounceTimers[fp]) clearTimeout(_debounceTimers[fp])
   _debounceTimers[fp] = setTimeout(() => {
     delete _debounceTimers[fp]
-    try { updateFile(fp) } catch {}
+    try { updateFile(fp, log) } catch {}
   }, ms)
 }
 
@@ -257,113 +261,122 @@ function buildSystemPrompt(): string {
   ].join("\n")
 }
 
-const _plugin: Plugin = async (ctx) => ({
-  tool: {
-    context_analyze: tool({
-      description: "Index a project: walk code files, extract functions/classes/interfaces/types/enums, store in a searchable index. Run this once when entering a new project. The index auto-updates on file changes after that.",
-      args: {
-        path: tool.schema.string().optional().describe("Project path. Default: current session directory."),
-      },
-      async execute(args, c) {
-        const root = args.path ? (isAbsolute(args.path) ? args.path : join(c.directory, args.path)) : c.directory
-        const files = walk(root, new Set())
-        const chunks: Chunk[] = []
-        const fileHashes: Record<string, string> = {}
-        for (const fp of files) {
-          try {
-            const content = readFileSync(fp, "utf-8")
-            fileHashes[fp] = hash(content)
-            const ext = extname(fp)
-            const p = PARSERS[ext]
-            if (p) chunks.push(...p(content, fp))
-          } catch {}
-        }
-        save({ projectRoot: root, chunks, indexedAt: new Date().toISOString(), fileHashes })
-        const fns = chunks.filter(x => x.type === "function").length
-        const cls = chunks.filter(x => x.type === "class").length
-        const ifs = chunks.filter(x => x.type === "interface").length
-        const types = chunks.filter(x => x.type === "type").length
-        const enums = chunks.filter(x => x.type === "enum").length
-        return [
-          `Indexed ${files.length} files → ${chunks.length} chunks`,
-          `  functions:  ${fns}`,
-          `  classes:    ${cls}`,
-          `  interfaces: ${ifs}`,
-          `  types:      ${types}`,
-          `  enums:      ${enums}`,
-          `  DB: ${DB_PATH}`,
-        ].join("\n")
-      },
-    }),
-    context_search: tool({
-      description: "Search indexed code by keyword or phrase. Use context_analyze first to build the index. Prefer this over reading files blindly to save tokens.",
-      args: {
-        query: tool.schema.string().describe("Search query (e.g. 'auth handler', 'validate function')"),
-        n: tool.schema.number().optional().default(10).describe("Max results (default 10)"),
-      },
-      async execute(args) {
-        const db = load()
-        if (!db.chunks.length) return "No index. Run context_analyze first."
-        if (args.query.trim().length < 2) return "Query too short. Use at least 2 characters."
-        const results = search(db.chunks, args.query, args.n || 10)
-        if (!results.length) return "No matches found."
-        return results.map(c => {
-          const rel = relative(db.projectRoot || "", c.file)
-          return `${c.type} ${c.name} @ ${rel}:${c.line}\n  ${c.content}`
-        }).join("\n\n")
-      },
-    }),
-    context_stats: tool({
-      description: "Show indexing statistics from the last context_analyze run.",
-      args: {},
-      async execute() {
-        const db = load()
-        if (!db.chunks.length) return "No index. Run context_analyze first."
-        const byLang: Record<string, number> = {}
-        for (const c of db.chunks) {
-          const ext = extname(c.file)
-          byLang[ext] = (byLang[ext] || 0) + 1
-        }
-        const lines = [
-          `Project: ${db.projectRoot}`,
-          `Indexed: ${db.indexedAt}`,
-          `Total:   ${db.chunks.length} chunks`,
-        ]
-        for (const [ext, n] of Object.entries(byLang).sort((a, b) => b[1] - a[1]))
-          lines.push(`  ${ext}: ${n}`)
-        lines.push(`Files:   ${new Set(db.chunks.map(c => c.file)).size}`)
-        return lines.join("\n")
-      },
-    }),
-    context_clear: tool({
-      description: "Delete the local code index.",
-      args: {},
-      async execute() {
-        save({ projectRoot: null, chunks: [], indexedAt: null, fileHashes: {} })
-        return "Index cleared."
-      },
-    }),
-  },
-  async event({ event }) {
-    if (event.type === "file.edited" && event.properties?.file) {
-      debouncedUpdateFile(event.properties.file)
-    }
-    if (event.type === "file.watcher.updated" && event.properties?.file) {
-      const fp = event.properties.file
-      const ev = event.properties.event
-      if (ev === "unlink") {
-        const db = load()
-        db.chunks = db.chunks.filter(c => c.file !== fp)
-        delete db.fileHashes[fp]
-        save(db)
-      } else if (ev === "add" || ev === "change") {
-        debouncedUpdateFile(fp)
+const _plugin: Plugin = async ({ client, directory }) => {
+  const log = (level: string, message: string, extra?: Record<string, unknown>) =>
+    client?.app?.log({ body: { service: "context-manager", level, message, extra } }).catch(() => {})
+
+  log("info", "plugin initialized", { directory })
+
+  return {
+    tool: {
+      context_analyze: tool({
+        description: "Index a project: walk code files, extract functions/classes/interfaces/types/enums, store in a searchable index. Run this once when entering a new project. The index auto-updates on file changes after that.",
+        args: {
+          path: tool.schema.string().optional().describe("Project path. Default: current session directory."),
+        },
+        async execute(args, c) {
+          const root = args.path ? (isAbsolute(args.path) ? args.path : join(c.directory, args.path)) : c.directory
+          const files = walk(root, new Set())
+          const chunks: Chunk[] = []
+          const fileHashes: Record<string, string> = {}
+          for (const fp of files) {
+            try {
+              const content = readFileSync(fp, "utf-8")
+              fileHashes[fp] = hash(content)
+              const ext = extname(fp)
+              const p = PARSERS[ext]
+              if (p) chunks.push(...p(content, fp))
+            } catch {}
+          }
+          save({ projectRoot: root, chunks, indexedAt: new Date().toISOString(), fileHashes })
+          log("info", "indexed project", { files: files.length, chunks: chunks.length, root })
+          const fns = chunks.filter(x => x.type === "function").length
+          const cls = chunks.filter(x => x.type === "class").length
+          const ifs = chunks.filter(x => x.type === "interface").length
+          const types = chunks.filter(x => x.type === "type").length
+          const enums = chunks.filter(x => x.type === "enum").length
+          return [
+            `Indexed ${files.length} files → ${chunks.length} chunks`,
+            `  functions:  ${fns}`,
+            `  classes:    ${cls}`,
+            `  interfaces: ${ifs}`,
+            `  types:      ${types}`,
+            `  enums:      ${enums}`,
+            `  DB: ${DB_PATH}`,
+          ].join("\n")
+        },
+      }),
+      context_search: tool({
+        description: "Search indexed code by keyword or phrase. Use context_analyze first to build the index. Prefer this over reading files blindly to save tokens.",
+        args: {
+          query: tool.schema.string().describe("Search query (e.g. 'auth handler', 'validate function')"),
+          n: tool.schema.number().optional().default(10).describe("Max results (default 10)"),
+        },
+        async execute(args) {
+          const db = load()
+          if (!db.chunks.length) return "No index. Run context_analyze first."
+          if (args.query.trim().length < 2) return "Query too short. Use at least 2 characters."
+          const results = search(db.chunks, args.query, args.n || 10)
+          if (!results.length) return "No matches found."
+          return results.map(c => {
+            const rel = relative(db.projectRoot || "", c.file)
+            return `${c.type} ${c.name} @ ${rel}:${c.line}\n  ${c.content}`
+          }).join("\n\n")
+        },
+      }),
+      context_stats: tool({
+        description: "Show indexing statistics from the last context_analyze run.",
+        args: {},
+        async execute() {
+          const db = load()
+          if (!db.chunks.length) return "No index. Run context_analyze first."
+          const byLang: Record<string, number> = {}
+          for (const c of db.chunks) {
+            const ext = extname(c.file)
+            byLang[ext] = (byLang[ext] || 0) + 1
+          }
+          const lines = [
+            `Project: ${db.projectRoot}`,
+            `Indexed: ${db.indexedAt}`,
+            `Total:   ${db.chunks.length} chunks`,
+          ]
+          for (const [ext, n] of Object.entries(byLang).sort((a, b) => b[1] - a[1]))
+            lines.push(`  ${ext}: ${n}`)
+          lines.push(`Files:   ${new Set(db.chunks.map(c => c.file)).size}`)
+          return lines.join("\n")
+        },
+      }),
+      context_clear: tool({
+        description: "Delete the local code index.",
+        args: {},
+        async execute() {
+          save({ projectRoot: null, chunks: [], indexedAt: null, fileHashes: {} })
+          return "Index cleared."
+        },
+      }),
+    },
+    async event({ event }) {
+      if (event.type === "file.edited" && event.properties?.file) {
+        debouncedUpdateFile(event.properties.file, 500, log)
       }
-    }
-  },
-  async "experimental.chat.system.transform"(_input, output) {
-    const prompt = buildSystemPrompt()
-    if (prompt) output.system.push(prompt)
-  },
-})
+      if (event.type === "file.watcher.updated" && event.properties?.file) {
+        const fp = event.properties.file
+        const ev = event.properties.event
+        if (ev === "unlink") {
+          const db = load()
+          db.chunks = db.chunks.filter(c => c.file !== fp)
+          delete db.fileHashes[fp]
+          save(db)
+          log("debug", "removed file from index", { file: fp })
+        } else if (ev === "add" || ev === "change") {
+          debouncedUpdateFile(fp, 500, log)
+        }
+      }
+    },
+    async "experimental.chat.system.transform"(_input, output) {
+      const prompt = buildSystemPrompt()
+      if (prompt) output.system.push(prompt)
+    },
+  }
+}
 export default { id: "@madkoding/context-manager", server: _plugin }
