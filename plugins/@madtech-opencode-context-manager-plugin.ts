@@ -13,8 +13,8 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
     client?.app?.log({ body: { service: "opencode-context-manager-plugin", level, message, extra } }).catch(() => {})
 
-  const toast = (message: string, variant: "info" | "success" | "warning" | "error" = "info") =>
-    client?.tui?.showToast?.({ body: { message, variant } }).catch(() => {})
+  const toast = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 10000) =>
+    client?.tui?.showToast?.({ body: { title, message, variant, duration } }).catch(() => {})
 
   const HOME = process.env.HOME || "/tmp"
   const dbDir = join(HOME, ".cache/opencode")
@@ -26,7 +26,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const state = { get db() { return db }, get ready() { return ready } }
 
   log("info", "plugin initialized", { directory })
-  toast("Indexing codebase…", "info")
+  toast("Context Manager", "Indexing codebase in background…", "info", 15000)
 
   setImmediate(() => {
     try {
@@ -62,11 +62,12 @@ const _plugin: Plugin = async ({ client, directory }) => {
             try {
               if (!db) return
               const { files, chunks, fileHashes, capped } = e.data
-              if (capped) {
-                log("warn", "index hit cap; partial index — run context_analyze on a specific path for full coverage", { maxFiles, files })
-                toast(`Indexed ${chunks.length} chunks (hit cap at ${files} files)`, "warning")
+              if (chunks.length === 0) {
+                toast("Context Manager", "No code files found in this directory", "warning", 10000)
+              } else if (capped) {
+                toast("Index capped", `Indexed ${chunks.length} chunks (hit cap at ${files} files). Pass a narrower path to context_analyze.`, "warning", 15000)
               } else {
-                toast(`Indexed ${chunks.length} chunks from ${files} files`, "success")
+                toast("Index ready", `Indexed ${chunks.length} chunks from ${files} files`, "success", 8000)
               }
               dbInsertChunks(db, chunks)
               for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
@@ -83,11 +84,13 @@ const _plugin: Plugin = async ({ client, directory }) => {
           }
           worker.onerror = (err) => {
             log("error", "index worker failed", { error: String(err) })
+            toast("Context Manager", "Index worker failed — run context_analyze manually", "error", 15000)
             ready = true
             worker.terminate()
           }
         } catch (e) {
           log("error", "could not start index worker", { error: String(e) })
+          toast("Context Manager", "Could not start index worker", "error", 15000)
           ready = true
         }
       } else {
@@ -95,6 +98,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
       }
     } catch (e) {
       log("error", "plugin init failed", { error: String(e) })
+      toast("Context Manager", `Init failed: ${String(e)}`, "error", 15000)
       ready = true
     }
   })
@@ -116,6 +120,11 @@ const _plugin: Plugin = async ({ client, directory }) => {
           dbSetMeta(state.db, "projectRoot", root)
           dbSetMeta(state.db, "indexedAt", new Date().toISOString())
           log("info", "indexed project", { files, chunks: chunks.length, root, capped })
+          if (capped) {
+            toast("Index capped", `Indexed ${chunks.length} chunks (hit cap at ${files} files). Pass a narrower path.`, "warning", 15000)
+          } else {
+            toast("Index ready", `Indexed ${chunks.length} chunks from ${files} files`, "success", 8000)
+          }
           const fns = chunks.filter(x => x.type === "function").length
           const cls = chunks.filter(x => x.type === "class").length
           const ifs = chunks.filter(x => x.type === "interface").length
