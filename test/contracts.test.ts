@@ -423,6 +423,23 @@ test("C10e: main plugin embeds SHIM_SOURCE and auto-installs it", async () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+// C10f: postinstall script — npm runs this on install to drop
+// the shim into ~/.config/opencode/plugins/ before the user
+// ever opens opencode, so the first startup gets instant
+// feedback while the npm plugin downloads
+// ═══════════════════════════════════════════════════════════════
+test("C10f: package.json declares postinstall that copies the shim", async () => {
+  const pkg = await Bun.file("./package.json").json()
+  expect(pkg.scripts.postinstall).toBe("bash scripts/postinstall.sh")
+  expect(pkg.files).toContain("scripts/")
+  const shim = Bun.file("./scripts/postinstall.sh")
+  expect(await shim.exists()).toBe(true)
+  const src = await shim.text()
+  expect(src).toContain("context-manager-loading-shim.ts")
+  expect(src).toContain("cmp -s")
+})
+
+// ═══════════════════════════════════════════════════════════════
 // C11: Tool names contract — the LLM calls these by exact name
 // ═══════════════════════════════════════════════════════════════
 test("C11: plugin exposes exactly 4 tools with correct names", async () => {

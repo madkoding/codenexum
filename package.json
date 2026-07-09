@@ -1,6 +1,6 @@
 {
   "name": "@madtech/opencode-context-manager-plugin",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "opencode plugin for context management in large projects",
   "license": "MIT",
   "main": "plugins/@madtech-opencode-context-manager-plugin.ts",
@@ -11,11 +11,13 @@
   "files": [
     "plugins/",
     "src/",
-    "skills/"
+    "skills/",
+    "scripts/"
   ],
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "bash scripts/postinstall.sh"
   },
   "engines": {
     "opencode": ">=1.0.0"
