@@ -440,6 +440,56 @@ test("C10f: package.json declares postinstall that copies the shim", async () =>
 })
 
 // ═══════════════════════════════════════════════════════════════
+// C10g: postinstall handles upgrades — if the shim content
+// changes between versions, the new content overwrites the old
+// ═══════════════════════════════════════════════════════════════
+test("C10g: postinstall overwrites the shim when content differs", async () => {
+  const tmp = await import("os").then(os => os.tmpdir())
+  const id = Date.now()
+  const fakeHome = `${tmp}/fake-home-${id}`
+  const fakePlugins = `${fakeHome}/.config/opencode/plugins`
+  const fakeDst = `${fakePlugins}/context-manager-loading-shim.ts`
+
+  // Set up a fake home with a stale shim
+  await Bun.$`mkdir -p ${fakePlugins}`.quiet()
+  await Bun.write(fakeDst, "// stale version 0")
+
+  // Stage a fake package layout with a newer shim
+  const fakePkg = `${tmp}/fake-pkg-${id}`
+  await Bun.$`mkdir -p ${fakePkg}/plugins ${fakePkg}/scripts`.quiet()
+  await Bun.write(`${fakePkg}/plugins/context-manager-loading-shim.ts`, "// fresh version 1")
+  await Bun.write(`${fakePkg}/scripts/postinstall.sh`, await Bun.file("./scripts/postinstall.sh").text())
+
+  // Run the postinstall script with HOME pointing to our fake home
+  const proc = Bun.spawn({
+    cmd: ["bash", `${fakePkg}/scripts/postinstall.sh`],
+    env: { ...process.env, HOME: fakeHome },
+    cwd: fakePkg,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  await proc.exited
+
+  const updated = await Bun.file(fakeDst).text()
+  expect(updated).toBe("// fresh version 1")
+
+  // Running again should be a no-op (idempotent)
+  const proc2 = Bun.spawn({
+    cmd: ["bash", `${fakePkg}/scripts/postinstall.sh`],
+    env: { ...process.env, HOME: fakeHome },
+    cwd: fakePkg,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  await proc2.exited
+  const stillSame = await Bun.file(fakeDst).text()
+  expect(stillSame).toBe("// fresh version 1")
+
+  // Cleanup
+  await Bun.$`rm -rf ${fakeHome} ${fakePkg}`.quiet()
+})
+
+// ═══════════════════════════════════════════════════════════════
 // C11: Tool names contract — the LLM calls these by exact name
 // ═══════════════════════════════════════════════════════════════
 test("C11: plugin exposes exactly 4 tools with correct names", async () => {

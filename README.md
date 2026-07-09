@@ -99,9 +99,18 @@ Install output is newline-delimited JSON on stderr (parseable with `jq`):
 ./install.sh 2> install.log          # capture to file
 ```
 
+### Upgrading
+
+Just run `npm install -g @madtech/opencode-context-manager-plugin@latest` (or `npm update -g`). The postinstall hook compares the bundled shim with the one in `~/.config/opencode/plugins/` and overwrites it only if the version changed. Opencode picks up the new shim on the next startup.
+
 ### Uninstall
 
-**npm:** Remove `"@madtech/opencode-context-manager-plugin"` from your `plugin` array and restart. To also remove the auto-installed skill, run `rm -rf ~/.config/opencode/skills/context-manager`.
+**npm:** Remove `"@madtech/opencode-context-manager-plugin"` from your `plugin` array and restart. To also remove the auto-installed shim and skill:
+
+```bash
+rm ~/.config/opencode/plugins/context-manager-loading-shim.ts
+rm -rf ~/.config/opencode/skills/context-manager
+```
 
 **Source:** Run `./uninstall.sh` from the cloned repo.
 
