@@ -13,8 +13,43 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
     client?.app?.log({ body: { service: "opencode-context-manager-plugin", level, message, extra } }).catch(() => {})
 
-  const toast = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 10000) =>
-    client?.tui?.showToast?.({ body: { title, message, variant, duration } }).catch(() => {})
+  const toast = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 10000) => {
+    const fullMessage = `[${title}] ${message}`
+    log("info", "toast", { title, message, variant, duration })
+    const tryShow = async () => {
+      const tui = (client as any)?.tui
+      if (!tui) {
+        log("warn", "client.tui not available")
+        return
+      }
+      if (typeof tui.showToast === "function") {
+        try {
+          const r = await tui.showToast({ body: { title, message, variant, duration } })
+          log("debug", "showToast result", { result: r })
+        } catch (e) {
+          log("warn", "showToast failed", { error: String(e) })
+        }
+      } else if (typeof tui.publish === "function") {
+        try {
+          const r = await tui.publish({ body: { type: "tui.toast.show", properties: { title, message, variant, duration } } })
+          log("debug", "publish toast result", { result: r })
+        } catch (e) {
+          log("warn", "publish toast failed", { error: String(e) })
+        }
+      } else {
+        log("warn", "no toast API available", { tuiKeys: Object.keys(tui) })
+      }
+      if (typeof tui.appendPrompt === "function") {
+        try {
+          await tui.appendPrompt({ body: { text: fullMessage } })
+          log("debug", "appended to prompt")
+        } catch (e) {
+          log("warn", "appendPrompt failed", { error: String(e) })
+        }
+      }
+    }
+    tryShow()
+  }
 
   const HOME = process.env.HOME || "/tmp"
   const dbDir = join(HOME, ".cache/opencode")
