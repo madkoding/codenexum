@@ -13,68 +13,91 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
     client?.app?.log({ body: { service: "opencode-context-manager-plugin", level, message, extra } }).catch(() => {})
 
-  log("info", "plugin initialized", { directory })
+  const toast = (message: string, variant: "info" | "success" | "warning" | "error" = "info") =>
+    client?.tui?.showToast?.({ body: { message, variant } }).catch(() => {})
 
   const HOME = process.env.HOME || "/tmp"
   const dbDir = join(HOME, ".cache/opencode")
   const dbPath = join(dbDir, "context-manager.sqlite")
   const oldJsonPath = join(dbDir, "context-manager.json")
 
-  if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
-  if (existsSync(oldJsonPath)) { try { unlinkSync(oldJsonPath) } catch {} }
+  let db: Database | null = null
+  let ready = false
+  const state = { get db() { return db }, get ready() { return ready } }
 
-  const db = new Database(dbPath)
-  initSchema(db)
+  log("info", "plugin initialized", { directory })
+  toast("Indexing codebase…", "info")
 
-  const skillDstDir = join(HOME, ".config/opencode/skills/context-manager")
-  const skillDst = join(skillDstDir, "SKILL.md")
-  if (!existsSync(skillDst)) {
-    const skillSrc = join(import.meta.dir, "..", "skills", "context-manager", "SKILL.md")
-    if (existsSync(skillSrc)) {
-      try {
-        mkdirSync(skillDstDir, { recursive: true })
-        copyFileSync(skillSrc, skillDst)
-        log("info", "skill auto-installed", { file: skillDst })
-      } catch (e) {
-        log("warn", "skill auto-install failed", { error: String(e) })
-      }
-    }
-  }
-
-  if (dbChunkCount(db) === 0) {
-    const maxFiles = getMaxFiles()
-    log("info", "auto-indexing project in worker (background)", { directory, maxFiles })
-    const workerPath = join(import.meta.dir, "worker-indexer.ts")
+  setImmediate(() => {
     try {
-      const worker = new Worker(workerPath, {
-        type: "module",
-      })
-      worker.postMessage({ root: directory, maxFiles })
-      worker.onmessage = (e: MessageEvent<{ files: number; chunks: any[]; fileHashes: Record<string, string>; capped: boolean }>) => {
-        try {
-          const { files, chunks, fileHashes, capped } = e.data
-          if (capped) {
-            log("warn", "index hit cap; partial index — run context_analyze on a specific path for full coverage", { maxFiles, files })
+      if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
+      if (existsSync(oldJsonPath)) { try { unlinkSync(oldJsonPath) } catch {} }
+
+      db = new Database(dbPath)
+      initSchema(db)
+
+      const skillDstDir = join(HOME, ".config/opencode/skills/context-manager")
+      const skillDst = join(skillDstDir, "SKILL.md")
+      if (!existsSync(skillDst)) {
+        const skillSrc = join(import.meta.dir, "..", "skills", "context-manager", "SKILL.md")
+        if (existsSync(skillSrc)) {
+          try {
+            mkdirSync(skillDstDir, { recursive: true })
+            copyFileSync(skillSrc, skillDst)
+            log("info", "skill auto-installed", { file: skillDst })
+          } catch (e) {
+            log("warn", "skill auto-install failed", { error: String(e) })
           }
-          dbInsertChunks(db, chunks)
-          for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
-          dbSetMeta(db, "projectRoot", directory)
-          dbSetMeta(db, "indexedAt", new Date().toISOString())
-          log("info", "auto-indexed project", { files, chunks: chunks.length, capped })
-          worker.terminate()
-        } catch (err) {
-          log("error", "failed to save auto-index", { error: String(err) })
-          worker.terminate()
         }
       }
-      worker.onerror = (err) => {
-        log("error", "index worker failed", { error: String(err) })
-        worker.terminate()
+
+      if (db && dbChunkCount(db) === 0) {
+        const maxFiles = getMaxFiles()
+        log("info", "auto-indexing project in worker (background)", { directory, maxFiles })
+        const workerPath = join(import.meta.dir, "worker-indexer.ts")
+        try {
+          const worker = new Worker(workerPath, { type: "module" })
+          worker.postMessage({ root: directory, maxFiles })
+          worker.onmessage = (e: MessageEvent<{ files: number; chunks: any[]; fileHashes: Record<string, string>; capped: boolean }>) => {
+            try {
+              if (!db) return
+              const { files, chunks, fileHashes, capped } = e.data
+              if (capped) {
+                log("warn", "index hit cap; partial index — run context_analyze on a specific path for full coverage", { maxFiles, files })
+                toast(`Indexed ${chunks.length} chunks (hit cap at ${files} files)`, "warning")
+              } else {
+                toast(`Indexed ${chunks.length} chunks from ${files} files`, "success")
+              }
+              dbInsertChunks(db, chunks)
+              for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
+              dbSetMeta(db, "projectRoot", directory)
+              dbSetMeta(db, "indexedAt", new Date().toISOString())
+              log("info", "auto-indexed project", { files, chunks: chunks.length, capped })
+              ready = true
+              worker.terminate()
+            } catch (err) {
+              log("error", "failed to save auto-index", { error: String(err) })
+              ready = true
+              worker.terminate()
+            }
+          }
+          worker.onerror = (err) => {
+            log("error", "index worker failed", { error: String(err) })
+            ready = true
+            worker.terminate()
+          }
+        } catch (e) {
+          log("error", "could not start index worker", { error: String(e) })
+          ready = true
+        }
+      } else {
+        ready = true
       }
     } catch (e) {
-      log("error", "could not start index worker", { error: String(e) })
+      log("error", "plugin init failed", { error: String(e) })
+      ready = true
     }
-  }
+  })
 
   return {
     tool: {
@@ -84,13 +107,14 @@ const _plugin: Plugin = async ({ client, directory }) => {
           path: tool.schema.string().optional().describe("Project path. Default: current session directory."),
         },
         async execute(args, c) {
+          if (!state.db) return "Plugin still initializing. Try again in a second."
           const root = args.path ? (isAbsolute(args.path) ? args.path : join(c.directory, args.path)) : c.directory
           const { files, chunks, fileHashes, capped } = indexProject(root)
-          dbClear(db)
-          dbInsertChunks(db, chunks)
-          for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
-          dbSetMeta(db, "projectRoot", root)
-          dbSetMeta(db, "indexedAt", new Date().toISOString())
+          dbClear(state.db)
+          dbInsertChunks(state.db, chunks)
+          for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(state.db, fp, h)
+          dbSetMeta(state.db, "projectRoot", root)
+          dbSetMeta(state.db, "indexedAt", new Date().toISOString())
           log("info", "indexed project", { files, chunks: chunks.length, root, capped })
           const fns = chunks.filter(x => x.type === "function").length
           const cls = chunks.filter(x => x.type === "class").length
@@ -132,9 +156,10 @@ const _plugin: Plugin = async ({ client, directory }) => {
           n: tool.schema.number().optional().default(10).describe("Max results (default 10)"),
         },
         async execute(args) {
-          if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
+          if (!state.db) return "Plugin still initializing. Try again in a second."
+          if (dbChunkCount(state.db) === 0) return "No index. Run context_analyze first."
           if (args.query.trim().length < 2) return "Query too short. Use at least 2 characters."
-          const results = dbSearch(db, args.query, args.n || 10)
+          const results = dbSearch(state.db, args.query, args.n || 10)
           if (!results.length) return "No matches found."
           const projectRoot = dbGetMeta(db, "projectRoot") || ""
           return results.map((r) => {
@@ -147,17 +172,18 @@ const _plugin: Plugin = async ({ client, directory }) => {
         description: "Show indexing statistics from the last context_analyze run.",
         args: {},
         async execute() {
-          const count = dbChunkCount(db)
+          if (!state.db) return "Plugin still initializing. Try again in a second."
+          const count = dbChunkCount(state.db)
           if (!count) return "No index. Run context_analyze first."
-          const byLang = dbStatsByLang(db)
+          const byLang = dbStatsByLang(state.db)
           const lines = [
-            `Project: ${dbGetMeta(db, "projectRoot")}`,
-            `Indexed: ${dbGetMeta(db, "indexedAt")}`,
+            `Project: ${dbGetMeta(state.db, "projectRoot")}`,
+            `Indexed: ${dbGetMeta(state.db, "indexedAt")}`,
             `Total:   ${count} chunks`,
           ]
           for (const { ext, n } of byLang)
             lines.push(`  ${ext}: ${n}`)
-          lines.push(`Files:   ${dbFileCount(db)}`)
+          lines.push(`Files:   ${dbFileCount(state.db)}`)
           return lines.join("\n")
         },
       }),
@@ -165,28 +191,31 @@ const _plugin: Plugin = async ({ client, directory }) => {
         description: "Delete the local code index.",
         args: {},
         async execute() {
-          dbClear(db)
+          if (!state.db) return "Plugin still initializing. Try again in a second."
+          dbClear(state.db)
           return "Index cleared."
         },
       }),
     },
     async event({ event }) {
+      if (!state.db) return
       if (event.type === "file.edited" && event.properties?.file) {
-        debouncedUpdateFile(db, event.properties.file, 500, log)
+        debouncedUpdateFile(state.db, event.properties.file, 500, log)
       }
       if (event.type === "file.watcher.updated" && event.properties?.file) {
         const fp = event.properties.file
         const ev = event.properties.event
         if (ev === "unlink") {
-          dbDeleteFile(db, fp)
+          dbDeleteFile(state.db, fp)
           log("debug", "removed file from index", { file: fp })
         } else if (ev === "add" || ev === "change") {
-          debouncedUpdateFile(db, fp, 500, log)
+          debouncedUpdateFile(state.db, fp, 500, log)
         }
       }
     },
     async "experimental.chat.system.transform"(_input, output) {
-      const prompt = buildSystemPrompt(db)
+      if (!state.db) return
+      const prompt = buildSystemPrompt(state.db)
       if (prompt) output.system.push(prompt)
     },
   }
