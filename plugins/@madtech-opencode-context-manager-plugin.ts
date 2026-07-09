@@ -42,9 +42,14 @@ async function ensureShimInstalled(HOME: string, client: any, log: LogFn) {
 
     let stillConfigured = true
     try {
-      const cfg = await client?.config?.get?.()
-      const plugins = (cfg as any)?.plugin
-      stillConfigured = Array.isArray(plugins) && plugins.some((p: string) => p.includes("@madtech/opencode-context-manager-plugin"))
+      const cfg = await Promise.race([
+        client?.config?.get?.(),
+        new Promise<null>(r => setTimeout(() => r(null), 2000)),
+      ])
+      if (cfg) {
+        const plugins = (cfg as any)?.plugin
+        stillConfigured = Array.isArray(plugins) && plugins.some((p: string) => p.includes("@madtech/opencode-context-manager-plugin"))
+      }
     } catch {}
 
     if (!stillConfigured) {
@@ -69,6 +74,9 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
     client?.app?.log({ body: { service: "opencode-context-manager-plugin", level, message, extra } }).catch(() => {})
 
+  const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
+    Promise.race([p.then(v => v, () => null), new Promise<null>(r => setTimeout(() => r(null), ms))])
+
   const toast = async (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 10000) => {
     const fullMessage = `[${title}] ${message}`
     log("info", "toast", { title, message, variant, duration })
@@ -78,30 +86,19 @@ const _plugin: Plugin = async ({ client, directory }) => {
       return
     }
     if (typeof tui.showToast === "function") {
-      try {
-        const r = await tui.showToast({ body: { title, message, variant, duration } })
-        log("debug", "showToast result", { result: r })
-        return
-      } catch (e) {
-        log("warn", "showToast failed", { error: String(e) })
-      }
+      const r = await withTimeout(tui.showToast({ body: { title, message, variant, duration } }), 3000)
+      if (r !== null) { log("debug", "showToast result", { result: r }); return }
+      log("warn", "showToast timed out")
     }
     if (typeof tui.publish === "function") {
-      try {
-        const r = await tui.publish({ body: { type: "tui.toast.show", properties: { title, message, variant, duration } } })
-        log("debug", "publish toast result", { result: r })
-        return
-      } catch (e) {
-        log("warn", "publish toast failed", { error: String(e) })
-      }
+      const r = await withTimeout(tui.publish({ body: { type: "tui.toast.show", properties: { title, message, variant, duration } } }), 3000)
+      if (r !== null) { log("debug", "publish toast result", { result: r }); return }
+      log("warn", "publish toast timed out")
     }
     if (typeof tui.appendPrompt === "function") {
-      try {
-        await tui.appendPrompt({ body: { text: fullMessage } })
-        log("debug", "appended to prompt")
-      } catch (e) {
-        log("warn", "appendPrompt failed", { error: String(e) })
-      }
+      const r = await withTimeout(tui.appendPrompt({ body: { text: fullMessage } }), 3000)
+      if (r !== null) { log("debug", "appended to prompt"); return }
+      log("warn", "appendPrompt timed out")
     } else {
       log("warn", "no toast API available", { tuiKeys: Object.keys(tui) })
     }
@@ -117,7 +114,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const state = { get db() { return db }, get ready() { return ready } }
 
   log("info", "plugin initialized", { directory })
-  await toast("Context Manager", "Indexing codebase in background…", "info", 15000)
+  toast("Context Manager", "Indexing codebase in background…", "info", 15000)
 
   setImmediate(() => {
     (async () => {
