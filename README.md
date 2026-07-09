@@ -107,10 +107,17 @@ Just run `npm install -g @madtech/opencode-context-manager-plugin@latest` (or `n
 
 ### Uninstall
 
-**npm:** Remove `"@madtech/opencode-context-manager-plugin"` from your `plugin` array and restart. To also remove the auto-installed shim and skill:
+**npm:** Remove `"@madtech/opencode-context-manager-plugin"` from your `plugin` array and restart. The plugin and the shim are both self-cleaning:
+
+- The shim checks the config on every opencode startup. If the plugin is no longer in the config, the shim self-deletes from `~/.config/opencode/plugins/`.
+- The main plugin also checks the config in `ensureShimInstalled` and removes the shim if the plugin was uninstalled.
+
+For a thorough manual cleanup:
 
 ```bash
 rm ~/.config/opencode/plugins/context-manager-loading-shim.ts
+rm -rf ~/.cache/opencode/packages/@madtech
+rm -rf ~/.cache/opencode/context-manager.sqlite*
 rm -rf ~/.config/opencode/skills/context-manager
 ```
 

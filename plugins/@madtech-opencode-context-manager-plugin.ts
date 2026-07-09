@@ -34,11 +34,26 @@ const ShimPlugin: Plugin = async ({ client }) => {
 export default ShimPlugin
 `
 
-function ensureShimInstalled(HOME: string, log: LogFn) {
+async function ensureShimInstalled(HOME: string, client: any, log: LogFn) {
   const shimDir = join(HOME, ".config/opencode/plugins")
   const shimPath = join(shimDir, "context-manager-loading-shim.ts")
   try {
     if (!existsSync(shimDir)) mkdirSync(shimDir, { recursive: true })
+
+    let stillConfigured = true
+    try {
+      const cfg = await client?.config?.get?.()
+      const plugins = (cfg as any)?.plugin
+      stillConfigured = Array.isArray(plugins) && plugins.some((p: string) => p.includes("@madtech/opencode-context-manager-plugin"))
+    } catch {}
+
+    if (!stillConfigured) {
+      if (existsSync(shimPath)) {
+        try { unlinkSync(shimPath); log("info", "shim removed (plugin no longer in config)") } catch {}
+      }
+      return
+    }
+
     if (existsSync(shimPath)) {
       const existing = readFileSync(shimPath, "utf-8")
       if (existing === SHIM_SOURCE) return
@@ -105,9 +120,10 @@ const _plugin: Plugin = async ({ client, directory }) => {
   await toast("Context Manager", "Indexing codebase in background…", "info", 15000)
 
   setImmediate(() => {
-    try {
-      ensureShimInstalled(HOME, log)
-      if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
+    (async () => {
+      try {
+        await ensureShimInstalled(HOME, client, log)
+        if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
       if (existsSync(oldJsonPath)) { try { unlinkSync(oldJsonPath) } catch {} }
 
       db = new Database(dbPath)
@@ -178,6 +194,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
       toast("Context Manager", `Init failed: ${String(e)}`, "error", 15000)
       ready = true
     }
+    })()
   })
 
   return {

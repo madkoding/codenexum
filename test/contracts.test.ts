@@ -411,6 +411,18 @@ test("C10d: loading shim exists and exports a Plugin function", async () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+// C10d2: shim is self-aware — checks config + cache before acting,
+// self-deletes when the main plugin is not configured
+// ═══════════════════════════════════════════════════════════════
+test("C10d2: shim checks config and self-deletes when plugin not configured", async () => {
+  const src = await Bun.file("./plugins/context-manager-loading-shim.ts").text()
+  expect(src).toContain("config.get")
+  expect(src).toContain("PLUGIN_NAME")
+  expect(src).toContain("unlinkSync")
+  expect(src).toContain("BUN_CACHE")
+})
+
+// ═══════════════════════════════════════════════════════════════
 // C10e: Auto-install shim — main plugin embeds the shim source
 // and writes it to ~/.config/opencode/plugins/ on first startup
 // so subsequent startups get instant feedback during npm install
@@ -420,6 +432,18 @@ test("C10e: main plugin embeds SHIM_SOURCE and auto-installs it", async () => {
   expect(src).toContain("SHIM_SOURCE")
   expect(src).toContain("context-manager-loading-shim.ts")
   expect(src).toContain("ensureShimInstalled")
+})
+
+// ═══════════════════════════════════════════════════════════════
+// C10e2: ensureShimInstalled is config-aware — it removes the
+// shim from disk when the plugin is no longer in the user's config
+// ═══════════════════════════════════════════════════════════════
+test("C10e2: ensureShimInstalled checks config before writing", async () => {
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
+  expect(src).toContain("ensureShimInstalled")
+  expect(src).toContain("client?.config?.get")
+  expect(src).toContain("stillConfigured")
+  expect(src).toContain("unlinkSync")
 })
 
 // ═══════════════════════════════════════════════════════════════
