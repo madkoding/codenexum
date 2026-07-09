@@ -1,13 +1,54 @@
 import { tool, type Plugin } from "@opencode-ai/plugin"
 import { Database } from "bun:sqlite"
 import { join, isAbsolute, relative, extname } from "path"
-import { existsSync, mkdirSync, unlinkSync, copyFileSync } from "fs"
+import { existsSync, mkdirSync, unlinkSync, copyFileSync, writeFileSync, readFileSync } from "fs"
 import {
   initSchema, dbInsertChunks, dbDeleteFile, dbSetFileHash, dbSetMeta,
   dbGetMeta, dbChunkCount, dbFileCount, dbSearch, dbClear, dbStatsByLang,
 } from "../src/store"
 import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn } from "../src/indexer"
 import { buildSystemPrompt } from "../src/prompt"
+
+const SHIM_SOURCE = `import type { Plugin } from "@opencode-ai/plugin"
+
+const ShimPlugin: Plugin = async ({ client }) => {
+  const log = (level: string, message: string, extra?: Record<string, unknown>) =>
+    client?.app?.log({ body: { service: "context-manager-shim", level, message, extra } }).catch(() => {})
+
+  const toast = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 8000) => {
+    const tui = (client as any)?.tui
+    if (tui?.showToast) tui.showToast({ body: { title, message, variant, duration } }).catch(() => {})
+    else if (tui?.publish) tui.publish({ body: { type: "tui.toast.show", properties: { title, message, variant, duration } } }).catch(() => {})
+    else if (tui?.appendPrompt) tui.appendPrompt({ body: { text: \`[\${title}] \${message}\` } }).catch(() => {})
+  }
+
+  log("info", "shim loaded — main plugin is being installed/downloaded")
+  toast("Context Manager", "Installing plugin…", "info", 30000)
+
+  setTimeout(() => toast("Context Manager", "Still loading… (first install can take 30-60s)", "info", 30000), 15000)
+  setTimeout(() => toast("Context Manager", "If the TUI is still blank, the main plugin is still downloading. Please wait.", "info", 30000), 45000)
+
+  return {}
+}
+
+export default ShimPlugin
+`
+
+function ensureShimInstalled(HOME: string, log: LogFn) {
+  const shimDir = join(HOME, ".config/opencode/plugins")
+  const shimPath = join(shimDir, "context-manager-loading-shim.ts")
+  try {
+    if (!existsSync(shimDir)) mkdirSync(shimDir, { recursive: true })
+    if (existsSync(shimPath)) {
+      const existing = readFileSync(shimPath, "utf-8")
+      if (existing === SHIM_SOURCE) return
+    }
+    writeFileSync(shimPath, SHIM_SOURCE, "utf-8")
+    log("info", "shim auto-installed", { file: shimPath })
+  } catch (e) {
+    log("warn", "shim auto-install failed", { error: String(e) })
+  }
+}
 
 const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
@@ -65,6 +106,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
 
   setImmediate(() => {
     try {
+      ensureShimInstalled(HOME, log)
       if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
       if (existsSync(oldJsonPath)) { try { unlinkSync(oldJsonPath) } catch {} }
 

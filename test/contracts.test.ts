@@ -411,6 +411,18 @@ test("C10d: loading shim exists and exports a Plugin function", async () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+// C10e: Auto-install shim — main plugin embeds the shim source
+// and writes it to ~/.config/opencode/plugins/ on first startup
+// so subsequent startups get instant feedback during npm install
+// ═══════════════════════════════════════════════════════════════
+test("C10e: main plugin embeds SHIM_SOURCE and auto-installs it", async () => {
+  const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
+  expect(src).toContain("SHIM_SOURCE")
+  expect(src).toContain("context-manager-loading-shim.ts")
+  expect(src).toContain("ensureShimInstalled")
+})
+
+// ═══════════════════════════════════════════════════════════════
 // C11: Tool names contract — the LLM calls these by exact name
 // ═══════════════════════════════════════════════════════════════
 test("C11: plugin exposes exactly 4 tools with correct names", async () => {
