@@ -1,0 +1,84 @@
+import { readdirSync, readFileSync, realpathSync, existsSync, mkdirSync } from "fs"
+import { join, extname } from "path"
+import { createHash } from "crypto"
+import type { Database } from "bun:sqlite"
+import type { Chunk } from "./types"
+import { IGNORE, CODE_EXTS } from "./types"
+import { PARSERS } from "./parsers"
+import { dbInsertChunks, dbDeleteFile, dbGetFileHash, dbSetFileHash } from "./store"
+
+function hash(s: string): string {
+  return createHash("md5").update(s).digest("hex")
+}
+
+export function walk(dir: string, seen: Set<string>): string[] {
+  let files: string[] = []
+  try {
+    const real = realpathSync(dir)
+    if (seen.has(real)) return []
+    seen.add(real)
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) {
+        if (!IGNORE.has(e.name)) files = files.concat(walk(join(dir, e.name), seen))
+      } else if (e.isFile() && CODE_EXTS.has(extname(e.name))) {
+        files.push(join(dir, e.name))
+      }
+    }
+  } catch {}
+  return files
+}
+
+export function parseFile(fp: string): Chunk[] {
+  const ext = extname(fp)
+  const p = PARSERS[ext]
+  if (!p) return []
+  return p(readFileSync(fp, "utf-8"), fp)
+}
+
+export function indexProject(root: string): { files: number; chunks: Chunk[]; fileHashes: Record<string, string> } {
+  const files = walk(root, new Set())
+  const chunks: Chunk[] = []
+  const fileHashes: Record<string, string> = {}
+  for (const fp of files) {
+    try {
+      const content = readFileSync(fp, "utf-8")
+      fileHashes[fp] = hash(content)
+      const ext = extname(fp)
+      const p = PARSERS[ext]
+      if (p) chunks.push(...p(content, fp))
+    } catch {}
+  }
+  return { files: files.length, chunks, fileHashes }
+}
+
+export type LogFn = (level: string, msg: string, extra?: Record<string, unknown>) => void
+
+export function updateFile(db: Database, fp: string, log?: LogFn): boolean {
+  const ext = extname(fp)
+  if (!CODE_EXTS.has(ext)) return false
+  let content: string
+  try { content = readFileSync(fp, "utf-8") } catch {
+    log?.("warn", "failed to read file", { file: fp })
+    return false
+  }
+  const h = hash(content)
+  if (dbGetFileHash(db, fp) === h) return false
+  dbDeleteFile(db, fp)
+  const newChunks = parseFile(fp)
+  dbInsertChunks(db, newChunks)
+  dbSetFileHash(db, fp, h)
+  log?.("debug", "reindexed file", { file: fp, chunks: newChunks.length })
+  return true
+}
+
+const _debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+
+export function debouncedUpdateFile(db: Database, fp: string, ms = 500, log?: LogFn): void {
+  if (_debounceTimers[fp]) clearTimeout(_debounceTimers[fp])
+  _debounceTimers[fp] = setTimeout(() => {
+    delete _debounceTimers[fp]
+    try { updateFile(db, fp, log) } catch {}
+  }, ms)
+}
+
+export { hash }
