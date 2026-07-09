@@ -6,7 +6,7 @@ import {
   initSchema, dbInsertChunks, dbDeleteFile, dbSetFileHash, dbSetMeta,
   dbGetMeta, dbChunkCount, dbFileCount, dbSearch, dbClear, dbStatsByLang,
 } from "../src/store"
-import { indexProject, updateFile, debouncedUpdateFile, type LogFn } from "../src/indexer"
+import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn } from "../src/indexer"
 import { buildSystemPrompt } from "../src/prompt"
 
 const _plugin: Plugin = async ({ client, directory }) => {
@@ -42,19 +42,38 @@ const _plugin: Plugin = async ({ client, directory }) => {
   }
 
   if (dbChunkCount(db) === 0) {
-    log("info", "auto-analyzing project (async)", { directory })
-    queueMicrotask(() => {
-      try {
-        const { files, chunks, fileHashes } = indexProject(directory)
-        dbInsertChunks(db, chunks)
-        for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
-        dbSetMeta(db, "projectRoot", directory)
-        dbSetMeta(db, "indexedAt", new Date().toISOString())
-        log("info", "auto-analyzed project", { files, chunks: chunks.length })
-      } catch (e) {
-        log("error", "auto-analyze failed", { error: String(e) })
+    const maxFiles = getMaxFiles()
+    log("info", "auto-indexing project in worker (background)", { directory, maxFiles })
+    const workerPath = join(import.meta.dir, "worker-indexer.ts")
+    try {
+      const worker = new Worker(workerPath, {
+        type: "module",
+      })
+      worker.postMessage({ root: directory, maxFiles })
+      worker.onmessage = (e: MessageEvent<{ files: number; chunks: any[]; fileHashes: Record<string, string>; capped: boolean }>) => {
+        try {
+          const { files, chunks, fileHashes, capped } = e.data
+          if (capped) {
+            log("warn", "index hit cap; partial index — run context_analyze on a specific path for full coverage", { maxFiles, files })
+          }
+          dbInsertChunks(db, chunks)
+          for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
+          dbSetMeta(db, "projectRoot", directory)
+          dbSetMeta(db, "indexedAt", new Date().toISOString())
+          log("info", "auto-indexed project", { files, chunks: chunks.length, capped })
+          worker.terminate()
+        } catch (err) {
+          log("error", "failed to save auto-index", { error: String(err) })
+          worker.terminate()
+        }
       }
-    })
+      worker.onerror = (err) => {
+        log("error", "index worker failed", { error: String(err) })
+        worker.terminate()
+      }
+    } catch (e) {
+      log("error", "could not start index worker", { error: String(e) })
+    }
   }
 
   return {
@@ -66,13 +85,13 @@ const _plugin: Plugin = async ({ client, directory }) => {
         },
         async execute(args, c) {
           const root = args.path ? (isAbsolute(args.path) ? args.path : join(c.directory, args.path)) : c.directory
-          const { files, chunks, fileHashes } = indexProject(root)
+          const { files, chunks, fileHashes, capped } = indexProject(root)
           dbClear(db)
           dbInsertChunks(db, chunks)
           for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
           dbSetMeta(db, "projectRoot", root)
           dbSetMeta(db, "indexedAt", new Date().toISOString())
-          log("info", "indexed project", { files, chunks: chunks.length, root })
+          log("info", "indexed project", { files, chunks: chunks.length, root, capped })
           const fns = chunks.filter(x => x.type === "function").length
           const cls = chunks.filter(x => x.type === "class").length
           const ifs = chunks.filter(x => x.type === "interface").length
@@ -88,6 +107,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
           const hdg = chunks.filter(x => x.type === "heading").length
           return [
             `Indexed ${files} files → ${chunks.length} chunks`,
+            capped ? `  ⚠ hit file cap (${files} files) — pass a narrower path` : null,
             `  functions:  ${fns}`,
             `  classes:    ${cls}`,
             `  interfaces: ${ifs}`,
@@ -102,7 +122,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
             `  tables:     ${tbl}`,
             `  headings:   ${hdg}`,
             `  DB: ${dbPath}`,
-          ].join("\n")
+          ].filter(Boolean).join("\n")
         },
       }),
       context_search: tool({

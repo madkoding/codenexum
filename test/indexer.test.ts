@@ -88,6 +88,22 @@ test("indexProject: returns empty for non-existent dir", () => {
   expect(chunks).toHaveLength(0)
 })
 
+test("indexProject: respects maxFiles cap and sets capped=true", () => {
+  writeFileSync(join(tmpDir, "a.ts"), "function a() {}")
+  writeFileSync(join(tmpDir, "b.ts"), "function b() {}")
+  writeFileSync(join(tmpDir, "c.ts"), "function c() {}")
+  const { files, capped } = indexProject(tmpDir, 2)
+  expect(files).toBe(2)
+  expect(capped).toBe(true)
+})
+
+test("indexProject: capped=false when under the cap", () => {
+  writeFileSync(join(tmpDir, "a.ts"), "function a() {}")
+  const { files, capped } = indexProject(tmpDir, 100)
+  expect(files).toBe(1)
+  expect(capped).toBe(false)
+})
+
 test("updateFile: inserts new file chunks", () => {
   const fp = join(tmpDir, "test.ts")
   writeFileSync(fp, "function foo() {}")

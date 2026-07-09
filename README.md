@@ -76,7 +76,9 @@ Add the package name to your opencode config file. That's it — opencode instal
 }
 ```
 
-Restart opencode. The plugin auto-indexes your project on first load and copies the bundled `SKILL.md` to `~/.config/opencode/skills/context-manager/` so opencode discovers it without extra config. No manual setup needed.
+Restart opencode. The plugin auto-indexes your project in a background worker (does not block the TUI) and copies the bundled `SKILL.md` to `~/.config/opencode/skills/context-manager/` so opencode discovers it without extra config. No manual setup needed.
+
+If you open opencode in a very large directory (e.g. your home), the auto-index is capped at 10,000 files. Pass a narrower path to `context_analyze` for full coverage, or raise the cap with `CONTEXT_MANAGER_MAX_FILES=50000`.
 
 ### From source (alternative)
 
@@ -116,7 +118,7 @@ When opencode starts and no index exists, the plugin automatically walks your pr
 - Enums
 - Traits (Rust), modules (Ruby), namespaces (C++)
 
-Each symbol becomes a "chunk" stored in SQLite: `{ name, file, type, line, content }`. You can also trigger a manual re-index anytime with `context_analyze`, or index a specific path.
+Each symbol becomes a "chunk" stored in SQLite: `{ name, file, type, line, content }`. Auto-indexing runs in a background worker on first load and never blocks the TUI. The walk is capped at 10,000 files (override with `CONTEXT_MANAGER_MAX_FILES`). You can also trigger a manual re-index anytime with `context_analyze`, or index a specific path.
 
 ### 2. Storage (SQLite FTS5)
 

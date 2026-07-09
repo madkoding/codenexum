@@ -11,15 +11,25 @@ function hash(s: string): string {
   return createHash("md5").update(s).digest("hex")
 }
 
-export function walk(dir: string, seen: Set<string>): string[] {
+const DEFAULT_MAX_FILES = 10000
+
+export function getMaxFiles(): number {
+  const v = process.env.CONTEXT_MANAGER_MAX_FILES
+  if (!v) return DEFAULT_MAX_FILES
+  const n = parseInt(v, 10)
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_FILES
+}
+
+export function walk(dir: string, seen: Set<string>, cap = Infinity): string[] {
   let files: string[] = []
   try {
     const real = realpathSync(dir)
     if (seen.has(real)) return []
     seen.add(real)
     for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (files.length >= cap) break
       if (e.isDirectory()) {
-        if (!IGNORE.has(e.name)) files = files.concat(walk(join(dir, e.name), seen))
+        if (!IGNORE.has(e.name)) files = files.concat(walk(join(dir, e.name), seen, cap - files.length))
       } else if (e.isFile() && CODE_EXTS.has(extname(e.name))) {
         files.push(join(dir, e.name))
       }
@@ -35,8 +45,9 @@ export function parseFile(fp: string): Chunk[] {
   return p(readFileSync(fp, "utf-8"), fp)
 }
 
-export function indexProject(root: string): { files: number; chunks: Chunk[]; fileHashes: Record<string, string> } {
-  const files = walk(root, new Set())
+export function indexProject(root: string, maxFiles = getMaxFiles()): { files: number; chunks: Chunk[]; fileHashes: Record<string, string>; capped: boolean } {
+  const files = walk(root, new Set(), maxFiles)
+  const capped = files.length >= maxFiles
   const chunks: Chunk[] = []
   const fileHashes: Record<string, string> = {}
   for (const fp of files) {
@@ -48,7 +59,7 @@ export function indexProject(root: string): { files: number; chunks: Chunk[]; fi
       if (p) chunks.push(...p(content, fp))
     } catch {}
   }
-  return { files: files.length, chunks, fileHashes }
+  return { files: files.length, chunks, fileHashes, capped }
 }
 
 export type LogFn = (level: string, msg: string, extra?: Record<string, unknown>) => void

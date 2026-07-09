@@ -496,12 +496,13 @@ test("C16: dbSearch takes (db, query, n) and returns SearchResult[]", () => {
   }
 })
 
-test("C16: indexProject takes (root) and returns { files, chunks, fileHashes }", () => {
+test("C16: indexProject takes (root) and returns { files, chunks, fileHashes, capped }", () => {
   writeFileSync(join(tmpDir, "c_test.ts"), "function foo() {}")
   const result = indexProject(tmpDir)
   expect(typeof result.files).toBe("number")
   expect(Array.isArray(result.chunks)).toBe(true)
   expect(typeof result.fileHashes).toBe("object")
+  expect(typeof result.capped).toBe("boolean")
 })
 
 test("C16: updateFile takes (db, fp, log?) and returns boolean", () => {
