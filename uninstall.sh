@@ -6,6 +6,7 @@ PLUGIN_DIR="$OPENCODE_DIR/plugins"
 SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
 PLUGIN_FILE="$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
+SHIM_FILE="$PLUGIN_DIR/context-manager-loading-shim.ts"
 PLUGIN_NAME="@madtech/opencode-context-manager-plugin"
 
 log() {
@@ -30,6 +31,12 @@ log info "uninstaller started" plugin "$PLUGIN_FILE"
 if [ -f "$PLUGIN_FILE" ]; then
   rm -f "$PLUGIN_FILE"
   log info "plugin removed" file "$PLUGIN_FILE"
+fi
+
+# ── Remove shim ──
+if [ -f "$SHIM_FILE" ]; then
+  rm -f "$SHIM_FILE"
+  log info "shim removed" file "$SHIM_FILE"
 fi
 
 # ── Remove source files ──

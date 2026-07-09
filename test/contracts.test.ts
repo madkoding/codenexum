@@ -397,6 +397,20 @@ test("C10c: bundled SKILL.md exists at skills/context-manager/SKILL.md", async (
 })
 
 // ═══════════════════════════════════════════════════════════════
+// C10d: Loading shim — local plugin that shows "Installing…" feedback
+// while opencode downloads the npm plugin on first run
+// ═══════════════════════════════════════════════════════════════
+test("C10d: loading shim exists and exports a Plugin function", async () => {
+  const shim = Bun.file("./plugins/context-manager-loading-shim.ts")
+  expect(await shim.exists()).toBe(true)
+  const src = await shim.text()
+  expect(src).toContain("export default ShimPlugin")
+  expect(src).toContain("const ShimPlugin: Plugin =")
+  expect(src).toContain("Installing")
+  expect(src).toContain("showToast")
+})
+
+// ═══════════════════════════════════════════════════════════════
 // C11: Tool names contract — the LLM calls these by exact name
 // ═══════════════════════════════════════════════════════════════
 test("C11: plugin exposes exactly 4 tools with correct names", async () => {

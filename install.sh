@@ -33,6 +33,10 @@ mkdir -p "$PLUGIN_DIR"
 cp "$REPO_DIR/plugins/@madtech-opencode-context-manager-plugin.ts" "$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
 log info "plugin copied" file "$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
 
+# ── 1a. Loading shim (instant-load local plugin for first-install feedback) ──
+cp "$REPO_DIR/plugins/context-manager-loading-shim.ts" "$PLUGIN_DIR/context-manager-loading-shim.ts"
+log info "shim copied" file "$PLUGIN_DIR/context-manager-loading-shim.ts"
+
 # ── 1b. Source files (needed for relative imports) ──
 cp -r "$REPO_DIR/src" "$PLUGIN_DIR/src"
 log info "source copied" dir "$PLUGIN_DIR/src"
