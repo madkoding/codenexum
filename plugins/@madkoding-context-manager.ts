@@ -164,9 +164,112 @@ function javaParse(c: string, f: string): Chunk[] {
       content:`enum ${m[1]}`})
   return r
 }
+function rbParse(c: string, f: string): Chunk[] {
+  const r: Chunk[] = []; let m: RegExpExecArray|null
+  const fn = /(?:^|\n)\s*def\s+(?:self\.)?(\w+)[\.\!\?]?\s*(?:\(([^)]*)\)|[^;\n]*)/g
+  while ((m = fn.exec(c)) !== null)
+    r.push({id:`${f}:fn:${m[1]}`,file:f,name:m[1],type:"function",
+      line:lineOf(c,m.index),
+      content:`def ${m[1]}(${m[2]||""})`})
+  const cl = /(?:^|\n)\s*(?:class|module)\s+(\w+)(?:\s*<\s*\w+)?/g
+  while ((m = cl.exec(c)) !== null)
+    r.push({id:`${f}:cls:${m[1]}`,file:f,name:m[1],type:"class",
+      line:lineOf(c,m.index),
+      content:`${m[0].trim().split(/\s+/)[0]} ${m[1]}`})
+  return r
+}
+function phpParse(c: string, f: string): Chunk[] {
+  const r: Chunk[] = []; let m: RegExpExecArray|null
+  const fn = /(?:^|\n)\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?function\s+(\w+)\s*\(([^)]*)\)/g
+  while ((m = fn.exec(c)) !== null)
+    r.push({id:`${f}:fn:${m[1]}`,file:f,name:m[1],type:"function",
+      line:lineOf(c,m.index),
+      content:`function ${m[1]}(${m[2]})`})
+  const cl = /(?:^|\n)\s*(?:final\s+|abstract\s+)?class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s\\]+)?\s*\{/g
+  while ((m = cl.exec(c)) !== null)
+    r.push({id:`${f}:cls:${m[1]}`,file:f,name:m[1],type:"class",
+      line:lineOf(c,m.index),
+      content:`class ${m[1]}`})
+  const iface = /(?:^|\n)\s*interface\s+(\w+)(?:\s+extends\s+[\w,\s\\]+)?\s*\{/g
+  while ((m = iface.exec(c)) !== null)
+    r.push({id:`${f}:iface:${m[1]}`,file:f,name:m[1],type:"interface",
+      line:lineOf(c,m.index),
+      content:`interface ${m[1]}`})
+  const tr = /(?:^|\n)\s*trait\s+(\w+)\s*\{/g
+  while ((m = tr.exec(c)) !== null)
+    r.push({id:`${f}:iface:${m[1]}`,file:f,name:m[1],type:"interface",
+      line:lineOf(c,m.index),
+      content:`trait ${m[1]}`})
+  const en = /(?:^|\n)\s*enum\s+(\w+)(?::\s*\w+)?\s*\{/g
+  while ((m = en.exec(c)) !== null)
+    r.push({id:`${f}:enum:${m[1]}`,file:f,name:m[1],type:"enum",
+      line:lineOf(c,m.index),
+      content:`enum ${m[1]}`})
+  return r
+}
+function cppParse(c: string, f: string): Chunk[] {
+  const r: Chunk[] = []; let m: RegExpExecArray|null
+  const fn = /(?:^|\n)\s*(?:template\s*<[^>]+>\s*)?(?:static\s+|inline\s+|extern\s+|constexpr\s+)*(?:\w+\s*\*?\s+)+(\w+)\s*\(([^)]*)\)\s*(?:const\s*|noexcept\s*)*\{/g
+  while ((m = fn.exec(c)) !== null)
+    r.push({id:`${f}:fn:${m[1]}`,file:f,name:m[1],type:"function",
+      line:lineOf(c,m.index),
+      content:`${m[1]}(${m[2]})`})
+  const cl = /(?:^|\n)\s*(?:template\s*<[^>]+>\s*)?(?:final\s+)?class\s+(\w+)(?:\s*:\s*(?:public|private|protected)\s+\w+(?:<[^>]+>)?)?\s*\{/g
+  while ((m = cl.exec(c)) !== null)
+    r.push({id:`${f}:cls:${m[1]}`,file:f,name:m[1],type:"class",
+      line:lineOf(c,m.index),
+      content:`class ${m[1]}`})
+  const st = /(?:^|\n)\s*(?:typedef\s+)?struct\s+(\w+)\s*\{/g
+  while ((m = st.exec(c)) !== null)
+    r.push({id:`${f}:cls:${m[1]}`,file:f,name:m[1],type:"class",
+      line:lineOf(c,m.index),
+      content:`struct ${m[1]}`})
+  const ns = /(?:^|\n)\s*namespace\s+(\w+)\s*\{/g
+  while ((m = ns.exec(c)) !== null)
+    r.push({id:`${f}:cls:${m[1]}`,file:f,name:m[1],type:"class",
+      line:lineOf(c,m.index),
+      content:`namespace ${m[1]}`})
+  const en = /(?:^|\n)\s*(?:enum\s+class\s+|enum\s+struct\s+|enum\s+)(\w+)(?::\s*\w+)?\s*\{/g
+  while ((m = en.exec(c)) !== null)
+    r.push({id:`${f}:enum:${m[1]}`,file:f,name:m[1],type:"enum",
+      line:lineOf(c,m.index),
+      content:`enum ${m[1]}`})
+  return r
+}
+function csParse(c: string, f: string): Chunk[] {
+  const r: Chunk[] = []; let m: RegExpExecArray|null
+  const md = /(?:^|\n)\s*(?:public\s+|private\s+|protected\s+|internal\s+)?(?:static\s+|virtual\s+|override\s+|abstract\s+|async\s+|sealed\s+)*\w+(?:<[^>]+>)?\s+(\w+)\s*\(([^)]*)\)\s*\{/g
+  while ((m = md.exec(c)) !== null)
+    r.push({id:`${f}:fn:${m[1]}`,file:f,name:m[1],type:"function",
+      line:lineOf(c,m.index),
+      content:`${m[1]}(${m[2]})`})
+  const cl = /(?:^|\n)\s*(?:public\s+|internal\s+|abstract\s+|sealed\s+|static\s+)*class\s+(\w+)(?:<[^>]+>)?(?:\s*:\s*[\w,\s<>\.]+)?\s*\{/g
+  while ((m = cl.exec(c)) !== null)
+    r.push({id:`${f}:cls:${m[1]}`,file:f,name:m[1],type:"class",
+      line:lineOf(c,m.index),
+      content:`class ${m[1]}`})
+  const iface = /(?:^|\n)\s*(?:public\s+|internal\s+)?interface\s+(\w+)(?:<[^>]+>)?(?:\s*:\s*[\w,\s<>\.]+)?(?:\s*where\s+\w+\s*:\s*[^{]+)?\s*\{/g
+  while ((m = iface.exec(c)) !== null)
+    r.push({id:`${f}:iface:${m[1]}`,file:f,name:m[1],type:"interface",
+      line:lineOf(c,m.index),
+      content:`interface ${m[1]}`})
+  const st = /(?:^|\n)\s*(?:public\s+|internal\s+)?struct\s+(\w+)(?:<[^>]+>)?\s*\{/g
+  while ((m = st.exec(c)) !== null)
+    r.push({id:`${f}:cls:${m[1]}`,file:f,name:m[1],type:"class",
+      line:lineOf(c,m.index),
+      content:`struct ${m[1]}`})
+  const en = /(?:^|\n)\s*(?:public\s+|internal\s+)?enum\s+(\w+)\s*\{/g
+  while ((m = en.exec(c)) !== null)
+    r.push({id:`${f}:enum:${m[1]}`,file:f,name:m[1],type:"enum",
+      line:lineOf(c,m.index),
+      content:`enum ${m[1]}`})
+  return r
+}
 const PARSERS: Record<string, (c: string, f: string) => Chunk[]> = {
   ".py": pyParse, ".js": jsParse, ".jsx": jsParse, ".ts": tsParse, ".tsx": tsParse,
   ".go": goParse, ".rs": rsParse, ".java": javaParse,
+  ".rb": rbParse, ".php": phpParse,
+  ".c": cppParse, ".h": cppParse, ".cpp": cppParse, ".hpp": cppParse, ".cs": csParse,
 }
 
 function walk(dir: string, seen: Set<string>): string[] {

@@ -228,12 +228,10 @@ Token budget heuristic: 50% active / 30% dependency signatures / 20% search resu
 | Go | `.go` | functions, structs, interfaces |
 | Rust | `.rs` | functions, structs, enums, traits |
 | Java | `.java` | classes, methods, interfaces, enums |
-| Ruby | `.rb` | *(planned)* |
-| PHP | `.php` | *(planned)* |
-| C/C++ | `.c` `.h` `.cpp` `.hpp` | *(planned)* |
-| C# | `.cs` | *(planned)* |
-
-> Ruby, PHP, C/C++, and C# file extensions are recognized by the walker but don't have dedicated parsers yet. They'll be indexed as empty chunk lists until parsers are added.
+| Ruby | `.rb` | functions, classes, modules |
+| PHP | `.php` | functions, classes, interfaces, traits, enums |
+| C/C++ | `.c` `.h` `.cpp` `.hpp` | functions, classes, structs, namespaces, enums |
+| C# | `.cs` | methods, classes, interfaces, structs, enums |
 
 ## Logging
 
