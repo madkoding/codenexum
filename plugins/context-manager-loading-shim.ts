@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { existsSync, unlinkSync, readFileSync, writeFileSync, rmSync } from "fs"
 import { join } from "path"
+import { spawn } from "child_process"
 
 const SHIM_PATH = join(
   process.env.HOME || "/tmp",
@@ -18,6 +19,10 @@ const BUN_CACHE_LATEST = join(
 const VERSION_MARKER = join(
   process.env.HOME || "/tmp",
   ".cache/opencode/.context-manager-version-check"
+)
+const PENDING_UPGRADE = join(
+  process.env.HOME || "/tmp",
+  ".cache/opencode/.context-manager-pending-upgrade"
 )
 const NPM_REGISTRY = "https://registry.npmjs.org/@madtech%2fopencode-context-manager-plugin/latest"
 
@@ -60,6 +65,25 @@ const ShimPlugin: Plugin = async ({ client }) => {
   }
 
   const cached = existsSync(BUN_CACHE) || existsSync(BUN_CACHE_LATEST)
+
+  // ponytail: if pending-upgrade marker exists, launch a detached process that
+  // deletes the bun cache after 2s (gives opencode time to load plugin code into memory).
+  // The process survives opencode's exit; unref() prevents opencode from waiting on it.
+  if (existsSync(PENDING_UPGRADE)) {
+    log("info", "pending-upgrade marker found; scheduling cache deletion")
+    toast("Context Manager", "Applying update… restart opencode to complete.", "info", 15000)
+    try {
+      const cmd = `sleep 2 && rm -rf "${BUN_CACHE}" "${BUN_CACHE_LATEST}" "${PENDING_UPGRADE}"`
+      const child = spawn("sh", ["-c", cmd], { detached: true, stdio: "ignore" })
+      child.unref()
+      log("info", "detached cache-deletion process spawned", { pid: child.pid })
+    } catch (e) {
+      log("warn", "failed to spawn cache-deletion process", { error: String(e) })
+      try { rmSync(PENDING_UPGRADE, { force: true }) } catch {}
+    }
+    return {}
+  }
+
   if (!cached) {
     log("info", "shim loaded — main plugin is being installed/downloaded")
     toast("Context Manager", "Installing plugin…", "info", 30000)
@@ -75,8 +99,9 @@ const ShimPlugin: Plugin = async ({ client }) => {
     return {}
   }
 
-  // ponytail: version-check runs fire-and-forget after first-install is handled.
+  // ponytail: version-check is read-only — never deletes cache while opencode is running.
   // Throttled to once/day via a marker file containing ISO date.
+  // Marker is written BEFORE the fetch so throttle works even if fetch fails.
   setImmediate(() => {
     (async () => {
       try {
@@ -88,6 +113,7 @@ const ShimPlugin: Plugin = async ({ client }) => {
             return
           }
         }
+        writeFileSync(VERSION_MARKER, today, "utf8")
 
         const cacheDir = existsSync(BUN_CACHE_LATEST) ? BUN_CACHE_LATEST : BUN_CACHE
         const pkgPath = join(cacheDir, "node_modules", "@madtech", "opencode-context-manager-plugin", "package.json")
@@ -98,34 +124,34 @@ const ShimPlugin: Plugin = async ({ client }) => {
         const localPkg = JSON.parse(readFileSync(pkgPath, "utf8"))
         const localVersion = localPkg.version
 
-        const ctrl = new AbortController()
-        const timer = setTimeout(() => ctrl.abort(), 3000)
-        const res = await fetch(NPM_REGISTRY, { signal: ctrl.signal })
-        clearTimeout(timer)
-        if (!res.ok) {
-          log("warn", "npm registry fetch failed", { status: res.status })
-          return
-        }
-        const remotePkg = await res.json()
-        const remoteVersion = (remotePkg as any)?.version
-        if (!remoteVersion) {
-          log("warn", "npm registry returned no version", { body: remotePkg })
-          return
+        // Promise.race with timeout — more reliable than AbortController in plugin context
+        let remoteVersion: string | null = null
+        try {
+          const res = await Promise.race([
+            fetch(NPM_REGISTRY),
+            new Promise<Response | null>(r => setTimeout(() => r(null), 3000)),
+          ])
+          if (res && res.ok) {
+            const remotePkg = await res.json()
+            remoteVersion = (remotePkg as any)?.version ?? null
+          }
+        } catch (e) {
+          log("warn", "npm fetch failed", { error: String(e) })
         }
 
-        writeFileSync(VERSION_MARKER, today, "utf8")
+        if (!remoteVersion) {
+          log("warn", "could not fetch remote version")
+          return
+        }
 
         if (localVersion === remoteVersion) {
           log("info", "plugin up to date", { local: localVersion, remote: remoteVersion })
           return
         }
 
-        log("info", "new version available; clearing bun cache", { local: localVersion, remote: remoteVersion })
-        toast("Context Manager", `Update ${remoteVersion} available (have ${localVersion}). Restart opencode to apply.`, "warning", 15000)
-
-        try { rmSync(BUN_CACHE, { recursive: true, force: true }) } catch {}
-        try { rmSync(BUN_CACHE_LATEST, { recursive: true, force: true }) } catch {}
-        log("info", "bun cache cleared for plugin upgrade", { remote: remoteVersion })
+        log("info", "new version available; writing pending-upgrade marker", { local: localVersion, remote: remoteVersion })
+        writeFileSync(PENDING_UPGRADE, remoteVersion, "utf8")
+        toast("Context Manager", `Update ${remoteVersion} available (have ${localVersion}). Restart opencode to apply.`, "warning", 30000)
       } catch (e) {
         log("warn", "version-check failed", { error: String(e) })
       }
