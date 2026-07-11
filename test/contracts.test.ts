@@ -42,7 +42,10 @@ test("C1: Chunk has required fields with correct types", () => {
     name: "foo",
     type: "function",
     line: 1,
+    lineEnd: 1,
     content: "function foo()",
+    body: "function foo() {}",
+    lang: "typescript",
   }
   expect(typeof chunk.id).toBe("string")
   expect(typeof chunk.file).toBe("string")
@@ -184,7 +187,8 @@ test("C5: context_search output format matches 'type name @ file:line\\n  conten
   dbClear(db)
   dbInsertChunks(db, [{
     id: "f:fn:handleAuth", file: join(tmpDir, "src/auth.ts"), name: "handleAuth",
-    type: "function", line: 42, content: "function handleAuth(req, res)",
+    type: "function", line: 42, lineEnd: 44, content: "function handleAuth(req, res)",
+    body: "function handleAuth(req, res) {\n  return;\n}", lang: "typescript",
   }])
   dbSetMeta(db, "projectRoot", tmpDir)
 
@@ -201,8 +205,8 @@ test("C5: context_search output format matches 'type name @ file:line\\n  conten
 test("C5: search results separated by double newline", () => {
   dbClear(db)
   dbInsertChunks(db, [
-    { id: "f1:fn:a", file: "a.ts", name: "foo", type: "function", line: 1, content: "function foo()" },
-    { id: "f2:fn:b", file: "b.ts", name: "bar", type: "function", line: 1, content: "function bar()" },
+    { id: "f1:fn:a", file: "a.ts", name: "foo", type: "function", line: 1, lineEnd: 1, content: "function foo()", body: "function foo() {}", lang: "typescript" },
+    { id: "f2:fn:b", file: "b.ts", name: "bar", type: "function", line: 1, lineEnd: 1, content: "function bar()", body: "function bar() {}", lang: "typescript" },
   ])
   dbSetMeta(db, "projectRoot", "")
 
@@ -218,8 +222,8 @@ test("C5: search results separated by double newline", () => {
 // ═══════════════════════════════════════════════════════════════
 test("C6: context_analyze output format has required lines", () => {
   const chunks: Chunk[] = [
-    { id: "f1:fn:a", file: "a.ts", name: "foo", type: "function", line: 1, content: "function foo()" },
-    { id: "f2:cls:b", file: "b.ts", name: "Bar", type: "class", line: 1, content: "class Bar" },
+    { id: "f1:fn:a", file: "a.ts", name: "foo", type: "function", line: 1, lineEnd: 1, content: "function foo()", body: "function foo() {}", lang: "typescript" },
+    { id: "f2:cls:b", file: "b.ts", name: "Bar", type: "class", line: 1, lineEnd: 1, content: "class Bar", body: "class Bar {}", lang: "typescript" },
   ]
   const fns = chunks.filter(x => x.type === "function").length
   const cls = chunks.filter(x => x.type === "class").length
@@ -277,7 +281,7 @@ test("C6: context_analyze output format has required lines", () => {
 test("C7: context_stats output format has required lines", () => {
   dbClear(db)
   dbInsertChunks(db, [
-    { id: "f1:fn:a", file: "test.ts", name: "foo", type: "function", line: 1, content: "function foo()" },
+    { id: "f1:fn:a", file: "test.ts", name: "foo", type: "function", line: 1, lineEnd: 1, content: "function foo()", body: "function foo() {}", lang: "typescript" },
   ])
   dbSetMeta(db, "projectRoot", "/fake")
   dbSetMeta(db, "indexedAt", "2026-01-01T00:00:00Z")
@@ -308,7 +312,7 @@ test("C7: context_stats output format has required lines", () => {
 test("C8: buildSystemPrompt wraps in <context-manager> tags", () => {
   dbClear(db)
   dbInsertChunks(db, [
-    { id: "f1:fn:a", file: "test.ts", name: "foo", type: "function", line: 1, content: "function foo()" },
+    { id: "f1:fn:a", file: "test.ts", name: "foo", type: "function", line: 1, lineEnd: 1, content: "function foo()", body: "function foo() {}", lang: "typescript" },
   ])
   dbSetMeta(db, "projectRoot", "/fake")
   dbSetMeta(db, "indexedAt", "2026-01-01")
@@ -596,7 +600,7 @@ test("C15: old JSON path is cleaned up on init", () => {
 test("C16: dbSearch takes (db, query, n) and returns SearchResult[]", () => {
   dbClear(db)
   dbInsertChunks(db, [
-    { id: "f:fn:x", file: "x.ts", name: "foo", type: "function", line: 1, content: "function foo()" },
+    { id: "f:fn:x", file: "x.ts", name: "foo", type: "function", line: 1, lineEnd: 1, content: "function foo()", body: "function foo() {}", lang: "typescript" },
   ])
   const results = dbSearch(db, "foo", 5)
   expect(Array.isArray(results)).toBe(true)

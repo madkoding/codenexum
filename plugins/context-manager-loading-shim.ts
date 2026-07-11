@@ -28,7 +28,7 @@ const NPM_REGISTRY = "https://registry.npmjs.org/@madtech%2fopencode-context-man
 
 const ShimPlugin: Plugin = async ({ client }) => {
   const log = (level: string, message: string, extra?: Record<string, unknown>) =>
-    client?.app?.log({ body: { service: "context-manager-shim", level, message, extra } }).catch(() => {})
+    client?.app?.log({ body: { service: "context-manager-shim", level: level as any, message, extra } }).catch(() => {})
 
   const toast = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 8000) => {
     const tui = (client as any)?.tui
@@ -53,7 +53,7 @@ const ShimPlugin: Plugin = async ({ client }) => {
   let pluginEnabled = false
   try {
     const cfg = await client.config.get()
-    pluginEnabled = Array.isArray(cfg?.plugin) && cfg.plugin.some((p: string) => p.includes(PLUGIN_NAME))
+    pluginEnabled = Array.isArray((cfg as any)?.plugin) && (cfg as any).plugin.some((p: string) => p.includes(PLUGIN_NAME))
   } catch (e) {
     log("warn", "config.get failed; assuming plugin not enabled", { error: String(e) })
   }

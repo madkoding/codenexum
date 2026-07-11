@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowImportingTsExtensions": true,
-    "noUncheckedIndexedAccess": false
+    "noUncheckedIndexedAccess": false,
+    "types": ["bun", "node"]
   },
   "include": ["src/**/*", "test/**/*", "plugins/**/*"]
 }

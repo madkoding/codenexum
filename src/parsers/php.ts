@@ -1,8 +1,10 @@
 import type { Chunk } from "../types"
+import { findBlockEndByBrace, bodyOf, makeChunk, getLang } from "./common"
 
 export function phpParse(c: string, f: string): Chunk[] {
   const r: Chunk[] = []
   let currentClass: string | null = null
+  let currentClassStart = -1
   let depth = 0
   let classDepth = -1
   const lines = c.split("\n")
@@ -18,56 +20,86 @@ export function phpParse(c: string, f: string): Chunk[] {
       if (ch === "}") depth--
     }
 
-    if (currentClass && depth <= classDepth) currentClass = null
+    if (currentClass && depth <= classDepth) {
+      r.push(makeChunk({
+        id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: currentClassStart + 1,
+        content: `class ${currentClass}`,
+        lineEnd: i + 1,
+      }, f, bodyOf(lines, currentClassStart, i)))
+      currentClass = null
+      currentClassStart = -1
+    }
 
-    // Class
     const cl = trimmed.match(/^(?:final\s+|abstract\s+)?class\s+(\w+)/)
     if (cl) {
-      currentClass = cl[1]; classDepth = prevDepth
-      r.push({ id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: i + 1, content: `class ${currentClass}` })
+      currentClass = cl[1]; classDepth = prevDepth; currentClassStart = i
       continue
     }
 
-    // Interface
     const iface = trimmed.match(/^interface\s+(\w+)/)
     if (iface) {
-      r.push({ id: `${f}:iface:${iface[1]}`, file: f, name: iface[1], type: "interface", line: i + 1, content: `interface ${iface[1]}` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:iface:${iface[1]}`, file: f, name: iface[1], type: "interface", line: i + 1,
+        content: `interface ${iface[1]}`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Trait
     const tr = trimmed.match(/^trait\s+(\w+)/)
     if (tr) {
-      r.push({ id: `${f}:iface:${tr[1]}`, file: f, name: tr[1], type: "interface", line: i + 1, content: `trait ${tr[1]}` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:iface:${tr[1]}`, file: f, name: tr[1], type: "interface", line: i + 1,
+        content: `trait ${tr[1]}`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Enum
     const en = trimmed.match(/^enum\s+(\w+)/)
     if (en) {
-      r.push({ id: `${f}:enum:${en[1]}`, file: f, name: en[1], type: "enum", line: i + 1, content: `enum ${en[1]}` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:enum:${en[1]}`, file: f, name: en[1], type: "enum", line: i + 1,
+        content: `enum ${en[1]}`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Function/method
     const fn = trimmed.match(/^(?:(?:public|private|protected)\s+)?(?:static\s+)?function\s+(\w+)\s*\(([^)]*)\)/)
     if (fn) {
       const name = currentClass ? `${currentClass}.${fn[1]}` : fn[1]
       const prefix = currentClass ? "method " : ""
-      r.push({ id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1, content: `${prefix}function ${name}(${fn[2]})` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1,
+        content: `${prefix}function ${name}(${fn[2]})`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // use / require / include
     const use = trimmed.match(/^use\s+(\w+)/)
     if (use && !trimmed.includes("function") && !trimmed.includes("const")) {
-      r.push({ id: `${f}:imp:${use[1]}`, file: f, name: use[1], type: "import", line: i + 1, content: trimmed })
+      r.push(makeChunk({ id: `${f}:imp:${use[1]}`, file: f, name: use[1], type: "import", line: i + 1, content: trimmed }, f))
       continue
     }
+
     const req = trimmed.match(/^(?:require|include)(?:_once)?\s+['"][^'"]+['"]/)
     if (req) {
-      r.push({ id: `${f}:imp:file`, file: f, name: "file", type: "import", line: i + 1, content: trimmed })
+      r.push(makeChunk({ id: `${f}:imp:file`, file: f, name: "file", type: "import", line: i + 1, content: trimmed }, f))
     }
+  }
+
+  if (currentClass && currentClassStart >= 0) {
+    r.push(makeChunk({
+      id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: currentClassStart + 1,
+      content: `class ${currentClass}`,
+      lineEnd: lines.length,
+    }, f, bodyOf(lines, currentClassStart, lines.length - 1)))
   }
 
   return r

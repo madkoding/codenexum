@@ -19,10 +19,10 @@ afterEach(() => {
 })
 
 const sampleChunks: Chunk[] = [
-  { id: "f1:fn:handleAuth", file: "src/auth.ts", name: "handleAuth", type: "function", line: 42, content: "function handleAuth(req, res, next)" },
-  { id: "f2:fn:createInvoice", file: "src/billing.ts", name: "createInvoice", type: "function", line: 15, content: "function createInvoice(items, tax)" },
-  { id: "f3:cls:AuthMiddleware", file: "src/middleware.ts", name: "AuthMiddleware", type: "class", line: 5, content: "class AuthMiddleware" },
-  { id: "f4:type:DatabasePool", file: "src/db.ts", name: "DatabasePool", type: "type", line: 22, content: "type DatabasePool" },
+  { id: "f1:fn:handleAuth", file: "src/auth.ts", name: "handleAuth", type: "function", line: 42, lineEnd: 45, content: "function handleAuth(req, res, next)", body: "function handleAuth(req, res, next) {\n  return next();\n}", lang: "typescript" },
+  { id: "f2:fn:createInvoice", file: "src/billing.ts", name: "createInvoice", type: "function", line: 15, lineEnd: 18, content: "function createInvoice(items, tax)", body: "function createInvoice(items, tax) {\n  return items;\n}", lang: "typescript" },
+  { id: "f3:cls:AuthMiddleware", file: "src/middleware.ts", name: "AuthMiddleware", type: "class", line: 5, lineEnd: 8, content: "class AuthMiddleware", body: "class AuthMiddleware {\n  use() {}\n}", lang: "typescript" },
+  { id: "f4:type:DatabasePool", file: "src/db.ts", name: "DatabasePool", type: "type", line: 22, lineEnd: 22, content: "type DatabasePool", body: "type DatabasePool = {}", lang: "typescript" },
 ]
 
 test("initSchema: creates tables", () => {
@@ -42,7 +42,7 @@ test("dbFileCount: counts unique files", () => {
   dbInsertChunks(db, sampleChunks)
   expect(dbFileCount(db)).toBe(4)
   // Add another chunk to same file
-  dbInsertChunks(db, [{ id: "f1:fn:logout", file: "src/auth.ts", name: "logout", type: "function", line: 50, content: "function logout()" }])
+  dbInsertChunks(db, [{ id: "f1:fn:logout", file: "src/auth.ts", name: "logout", type: "function", line: 50, lineEnd: 52, content: "function logout()", body: "function logout() {}", lang: "typescript" }])
   expect(dbFileCount(db)).toBe(4) // still 4 unique files
   expect(dbChunkCount(db)).toBe(5)
 })
@@ -104,9 +104,9 @@ test("dbSearch: returns empty for short query", () => {
 
 test("dbSearch: BM25 ranking orders by relevance", () => {
   dbInsertChunks(db, [
-    { id: "a:fn:auth", file: "a.ts", name: "auth", type: "function", line: 1, content: "auth" },
-    { id: "b:fn:authHandler", file: "b.ts", name: "authHandler", type: "function", line: 1, content: "function authHandler(req)" },
-    { id: "c:fn:other", file: "c.ts", name: "other", type: "function", line: 1, content: "function other(auth auth auth)" },
+    { id: "a:fn:auth", file: "a.ts", name: "auth", type: "function", line: 1, lineEnd: 1, content: "auth", body: "auth", lang: "typescript" },
+    { id: "b:fn:authHandler", file: "b.ts", name: "authHandler", type: "function", line: 1, lineEnd: 1, content: "function authHandler(req)", body: "function authHandler(req) {}", lang: "typescript" },
+    { id: "c:fn:other", file: "c.ts", name: "other", type: "function", line: 1, lineEnd: 1, content: "function other(auth auth auth)", body: "function other(auth auth auth) {}", lang: "typescript" },
   ])
   const results = dbSearch(db, "auth", 10)
   expect(results.length).toBe(3)

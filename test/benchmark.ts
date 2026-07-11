@@ -132,7 +132,7 @@ async function benchCompact() {
 async function benchPrompt(db: Database) {
   dbClear(db)
   dbInsertChunks(db, [
-    { id: "f:fn:a", file: "test.ts", name: "foo", type: "function", line: 1, content: "function foo()" },
+    { id: "f:fn:a", file: "test.ts", name: "foo", type: "function", line: 1, lineEnd: 1, content: "function foo()", body: "function foo() {}", lang: "typescript" },
   ])
   const after = buildSystemPrompt(db)
   const before = [

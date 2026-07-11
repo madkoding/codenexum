@@ -4,8 +4,11 @@ import { join, isAbsolute, relative, extname } from "path"
 import { existsSync, mkdirSync, unlinkSync, copyFileSync, writeFileSync, readFileSync } from "fs"
 import {
   initSchema, dbInsertChunks, dbDeleteFile, dbSetFileHash, dbSetMeta,
-  dbGetMeta, dbChunkCount, dbFileCount, dbSearch, dbClear, dbStatsByLang,
+  dbGetMeta, dbChunkCount, dbFileCount, dbClear, dbStatsByLang, dbTopFiles,
+  dbGetSchemaVersion, dbSetSchemaVersion, SCHEMA_VERSION,
 } from "../src/store"
+import { search } from "../src/search"
+import { formatSearchResults } from "../src/format"
 import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn } from "../src/indexer"
 import { buildSystemPrompt } from "../src/prompt"
 import { compressToolOutput } from "../src/compress"
@@ -215,7 +218,7 @@ async function ensureShimInstalled(HOME: string, client: any, log: LogFn) {
 
 const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
-    client?.app?.log({ body: { service: "opencode-context-manager-plugin", level, message, extra } }).catch(() => {})
+    client?.app?.log({ body: { service: "opencode-context-manager-plugin", level: level as any, message, extra } }).catch(() => {})
 
   const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
     Promise.race([p.then(v => v, () => null), new Promise<null>(r => setTimeout(() => r(null), ms))])
@@ -268,6 +271,14 @@ const _plugin: Plugin = async ({ client, directory }) => {
 
       db = new Database(dbPath)
       initSchema(db)
+
+      const currentSchemaVersion = dbGetSchemaVersion(db)
+      if (currentSchemaVersion < SCHEMA_VERSION) {
+        log("info", "schema version mismatch; clearing index for reindex", { current: currentSchemaVersion, target: SCHEMA_VERSION })
+        dbClear(db)
+        dbSetSchemaVersion(db, SCHEMA_VERSION)
+        toast("Context Manager", "Index schema updated; reindexing project…", "info", 15000)
+      }
 
       const skillDstDir = join(HOME, ".config/opencode/skills/context-manager")
       const skillDst = join(skillDstDir, "SKILL.md")
@@ -393,27 +404,27 @@ const _plugin: Plugin = async ({ client, directory }) => {
         },
       }),
       context_search: tool({
-        description: "Search indexed code by keyword. Prefer this over reading files blindly. Returns type name @ file:line ranked by BM25.",
+        description: "Search indexed code by keyword. Prefer this over reading files blindly. Supports filters like class:User, function:auth, file:auth.ts, lang:ts. Returns symbol name with file range and a snippet of the body.",
         args: {
-          query: tool.schema.string().describe("Search query (e.g. 'auth handler', 'validate function')"),
+          query: tool.schema.string().describe("Search query (e.g. 'auth handler', 'validate function', 'class:User')"),
           n: tool.schema.number().optional().default(10).describe("Max results (default 10)"),
-          compact: tool.schema.boolean().optional().describe("Omit content, return only 'type name @ file:line' per result. Defaults to true when n>5."),
+          compact: tool.schema.boolean().optional().describe("Omit snippets, return only 'type name @ file:line-lineEnd' per result. Defaults to true when n>5."),
+          snippet: tool.schema.number().optional().default(20).describe("Max lines of body to show per result (0 = no snippet)."),
         },
         async execute(args) {
-          if (!state.db) return "Plugin still initializing. Try again in a second."
-          if (dbChunkCount(state.db) === 0) return "No index. Run context_analyze first."
+          const db = state.db
+          if (!db) return "Plugin still initializing. Try again in a second."
+          if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
           if (args.query.trim().length < 2) return "Query too short. Use at least 2 characters."
           const limit = args.n || 10
-          const results = dbSearch(state.db, args.query, limit)
+          const results = search(db, args.query, limit)
           if (!results.length) return "No matches found."
           const projectRoot = dbGetMeta(db, "projectRoot") || ""
           const isCompact = args.compact ?? limit > 5
-          return results.map((r) => {
-            const rel = relative(projectRoot, r.file)
-            return isCompact
-              ? `${r.type} ${r.name} @ ${rel}:${r.line}`
-              : `${r.type} ${r.name} @ ${rel}:${r.line}\n  ${r.content}`
-          }).join("\n\n")
+          return formatSearchResults(results, projectRoot, {
+            compact: isCompact,
+            snippetLines: args.snippet ?? (isCompact ? 0 : 20),
+          })
         },
       }),
       context_stats: tool({
@@ -450,16 +461,17 @@ const _plugin: Plugin = async ({ client, directory }) => {
     },
     async event({ event }) {
       if (!state.db) return
-      if (event.type === "message.updated" && event.properties?.tokens) {
-        const t = event.properties.tokens as { input?: number; output?: number }
-        recordTokens(event.properties.sessionID, t.input || 0, t.output || 0)
+      const props = event.properties as any
+      if (event.type === "message.updated" && props?.tokens) {
+        const t = props.tokens as { input?: number; output?: number }
+        recordTokens(props.sessionID, t.input || 0, t.output || 0)
       }
-      if (event.type === "file.edited" && event.properties?.file) {
-        debouncedUpdateFile(state.db, event.properties.file, 500, log)
+      if (event.type === "file.edited" && props?.file) {
+        debouncedUpdateFile(state.db, props.file, 500, log)
       }
-      if (event.type === "file.watcher.updated" && event.properties?.file) {
-        const fp = event.properties.file
-        const ev = event.properties.event
+      if (event.type === "file.watcher.updated" && props?.file) {
+        const fp = props.file
+        const ev = props.event
         if (ev === "unlink") {
           dbDeleteFile(state.db, fp)
           log("debug", "removed file from index", { file: fp })

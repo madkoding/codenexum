@@ -1,8 +1,10 @@
 import type { Chunk } from "../types"
+import { findBlockEndByBrace, bodyOf, makeChunk, getLang } from "./common"
 
 export function javaParse(c: string, f: string): Chunk[] {
   const r: Chunk[] = []
   let currentClass: string | null = null
+  let currentClassStart = -1
   let depth = 0
   let classDepth = -1
   const lines = c.split("\n")
@@ -18,53 +20,76 @@ export function javaParse(c: string, f: string): Chunk[] {
       if (ch === "}") depth--
     }
 
-    if (currentClass && depth <= classDepth) currentClass = null
+    if (currentClass && depth <= classDepth) {
+      r.push(makeChunk({
+        id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: currentClassStart + 1,
+        content: `class ${currentClass}`,
+        lineEnd: i + 1,
+      }, f, bodyOf(lines, currentClassStart, i)))
+      currentClass = null
+      currentClassStart = -1
+    }
 
-    // Annotation
     const ann = trimmed.match(/^@(\w+)(?:\s*\(([^)]*)\))?/)
     if (ann) {
-      r.push({ id: `${f}:dec:${ann[1]}`, file: f, name: ann[1], type: "decorator", line: i + 1, content: trimmed })
+      r.push(makeChunk({ id: `${f}:dec:${ann[1]}`, file: f, name: ann[1], type: "decorator", line: i + 1, content: trimmed }, f))
       continue
     }
 
-    // Class declaration
     const cl = trimmed.match(/^(?:public\s+|private\s+|protected\s+)?(?:abstract\s+|final\s+|static\s+)*class\s+(\w+)/)
     if (cl) {
-      currentClass = cl[1]
-      classDepth = prevDepth
-      r.push({ id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: i + 1, content: `class ${currentClass}` })
+      currentClass = cl[1]; classDepth = prevDepth; currentClassStart = i
       continue
     }
 
-    // Interface
     const iface = trimmed.match(/^(?:public\s+)?interface\s+(\w+)/)
     if (iface) {
-      r.push({ id: `${f}:iface:${iface[1]}`, file: f, name: iface[1], type: "interface", line: i + 1, content: `interface ${iface[1]}` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:iface:${iface[1]}`, file: f, name: iface[1], type: "interface", line: i + 1,
+        content: `interface ${iface[1]}`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Enum
     const en = trimmed.match(/^(?:public\s+)?enum\s+(\w+)/)
     if (en) {
-      r.push({ id: `${f}:enum:${en[1]}`, file: f, name: en[1], type: "enum", line: i + 1, content: `enum ${en[1]}` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:enum:${en[1]}`, file: f, name: en[1], type: "enum", line: i + 1,
+        content: `enum ${en[1]}`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Method declaration (inside or outside class)
-    const md = trimmed.match(/^(?:public|private|protected)\s+(?:static\s+)?(?:\w+(?:<[^>]+>)?\s+)?(\w+)\s*\(([^)]*)\)/)
+    const md = trimmed.match(/^(?:public|private|protected)\s+(?:static\s+)?(?:\w+(?:\s*<[^\u003e]+\u003e)?\s+)?(\w+)\s*\(([^)]*)\)/)
     if (md) {
       const name = currentClass ? `${currentClass}.${md[1]}` : md[1]
-      r.push({ id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1, content: `method ${name}(${md[2]})` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1,
+        content: `method ${name}(${md[2]})`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Import
     const im = trimmed.match(/^import\s+(?:static\s+)?(?:\w+\.)*(\w+)/)
     if (im) {
       const name = im[1]
       if (name !== "*")
-        r.push({ id: `${f}:imp:${name}`, file: f, name, type: "import", line: i + 1, content: trimmed })
+        r.push(makeChunk({ id: `${f}:imp:${name}`, file: f, name, type: "import", line: i + 1, content: trimmed }, f))
     }
+  }
+
+  if (currentClass && currentClassStart >= 0) {
+    r.push(makeChunk({
+      id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: currentClassStart + 1,
+      content: `class ${currentClass}`,
+      lineEnd: lines.length,
+    }, f, bodyOf(lines, currentClassStart, lines.length - 1)))
   }
 
   return r

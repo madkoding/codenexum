@@ -9,14 +9,35 @@ When working with large projects, be strategic about context usage to avoid hitt
 
 ## Code Index (auto-maintained)
 
-A code index is available via the `context_search` tool. It tracks functions, classes, interfaces, type aliases, and enums across the project. The index **auto-updates** when files are edited or created — no manual re-indexing needed.
+A code index is available via the `context_search` tool. It tracks functions, classes, interfaces, type aliases, enums, imports, exports, and more across the project. The index **auto-updates** when files are edited or created — no manual re-indexing needed.
 
 **Always use `context_search` before reading files** to find the exact file and line number you need. This avoids blindly reading large files and wasting tokens.
 
-Example flow:
-1. `context_search "auth handler"` → finds `function handleAuth @ src/auth.ts:42`
-2. Read only `src/auth.ts` around line 42
-3. Saves ~90% tokens vs reading the whole file tree
+### Search filters
+
+You can narrow results with prefixes:
+
+| Filter | Example | What it does |
+|---|---|---|
+| `type:` | `class:User` | Only symbols of that type |
+| `file:` | `file:auth.ts` | Only symbols in files matching the substring |
+| `lang:` | `lang:ts` | Only symbols in TypeScript files |
+
+Filters can be combined with free text: `function:auth file:src`.
+
+### Example flow
+
+1. `context_search "auth handler"` → returns something like:
+   ```
+   function handleAuth @ src/auth.ts:42-48
+     42│ function handleAuth(req, res, next) {
+     43│   const token = req.headers.authorization;
+     44│   return verify(token);
+     45│ }
+   ```
+2. If the snippet is enough to answer the user's question, stop there.
+3. Only read `src/auth.ts` if you need surrounding context.
+4. Saves ~90% tokens vs reading the whole file tree.
 
 ## Compression Strategy
 
@@ -34,9 +55,9 @@ When you detect the context is getting full:
 ## Tools
 
 | Tool | Description |
-|------|-------------|
+|---|---|
 | `context_analyze [path]` | Index a project (run once on first use, then auto-updates) |
-| `context_search <query> [n]` | Search indexed code by keyword/phrase — **prefer this before reading files** |
+| `context_search <query> [n] [snippet=N]` | Search indexed code by keyword/phrase — **prefer this before reading files** |
 | `context_stats` | Show indexing statistics |
 | `context_clear` | Clear the local index |
 

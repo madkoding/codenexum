@@ -1,47 +1,65 @@
 import type { Chunk } from "../types"
+import { findBlockEndByEndKeyword, bodyOf, makeChunk, getLang } from "./common"
 
 export function rbParse(c: string, f: string): Chunk[] {
   const r: Chunk[] = []
-  let currentClass: string | null = null
+  const classStack: { name: string; line: number; kind: string }[] = []
   const lines = c.split("\n")
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim()
     if (!trimmed) continue
 
-    // class/module declaration (keyword-based, no reliable brace tracking)
-    const cl = trimmed.match(/^(?:class|module)\s+(\w+)/)
+    const cl = trimmed.match(/^(class|module)\s+(\w+)/)
     if (cl) {
-      currentClass = cl[1]
-      r.push({ id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: i + 1, content: `${cl[0].split(/\s+/)[0]} ${currentClass}` })
+      classStack.push({ name: cl[2], line: i, kind: cl[1] })
       continue
     }
 
-    // end keyword — might exit class scope (heuristic)
-    if (trimmed === "end" && currentClass) {
-      currentClass = null
+    if (trimmed === "end" && classStack.length > 0) {
+      const cls = classStack.pop()!
+      const name = cls.name
+      r.push(makeChunk({
+        id: `${f}:cls:${name}`, file: f, name, type: "class", line: cls.line + 1,
+        content: `${cls.kind} ${name}`,
+        lineEnd: i + 1,
+      }, f, bodyOf(lines, cls.line, i)))
       continue
     }
 
-    // Method definition
     const fn = trimmed.match(/^def\s+(?:self\.)?(\w+)[\.\!\?]?\s*(?:\(([^)]*)\))?/)
     if (fn) {
-      const name = currentClass ? `${currentClass}.${fn[1]}` : fn[1]
-      const prefix = currentClass ? "method " : ""
-      r.push({ id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1, content: `${prefix}def ${name}(${fn[2] || ""})` })
+      const endLine = findBlockEndByEndKeyword(lines, i)
+      const name = classStack.length > 0 ? `${classStack[classStack.length - 1].name}.${fn[1]}` : fn[1]
+      const prefix = classStack.length > 0 ? "method " : ""
+      r.push(makeChunk({
+        id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1,
+        content: `${prefix}def ${name}(${fn[2] || ""})`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // require / include / extend
     const req = trimmed.match(/^require\s+['"]([^'"]+)['"]/)
     if (req) {
-      r.push({ id: `${f}:imp:${req[1]}`, file: f, name: req[1], type: "import", line: i + 1, content: trimmed })
+      r.push(makeChunk({ id: `${f}:imp:${req[1]}`, file: f, name: req[1], type: "import", line: i + 1, content: trimmed }, f))
       continue
     }
+
     const incl = trimmed.match(/^(?:include|extend)\s+(\w+)/)
     if (incl) {
-      r.push({ id: `${f}:imp:${incl[1]}`, file: f, name: incl[1], type: "import", line: i + 1, content: trimmed })
+      r.push(makeChunk({ id: `${f}:imp:${incl[1]}`, file: f, name: incl[1], type: "import", line: i + 1, content: trimmed }, f))
     }
+  }
+
+  // Close any open classes at EOF
+  while (classStack.length > 0) {
+    const cls = classStack.pop()!
+    r.push(makeChunk({
+      id: `${f}:cls:${cls.name}`, file: f, name: cls.name, type: "class", line: cls.line + 1,
+      content: `class ${cls.name}`,
+      lineEnd: lines.length,
+    }, f, bodyOf(lines, cls.line, lines.length - 1)))
   }
 
   return r

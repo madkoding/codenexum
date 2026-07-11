@@ -1,8 +1,10 @@
 import type { Chunk } from "../types"
+import { findBlockEndByBrace, bodyOf, makeChunk, getLang } from "./common"
 
 export function csParse(c: string, f: string): Chunk[] {
   const r: Chunk[] = []
   let currentClass: string | null = null
+  let currentClassStart = -1
   let depth = 0
   let classDepth = -1
   let recordDepth = -1
@@ -19,61 +21,83 @@ export function csParse(c: string, f: string): Chunk[] {
       if (ch === "}") depth--
     }
 
-    if (currentClass && depth <= classDepth && depth <= recordDepth) currentClass = null
+    if (currentClass && depth <= classDepth && depth <= recordDepth) {
+      r.push(makeChunk({
+        id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: currentClassStart + 1,
+        content: `class ${currentClass}`,
+        lineEnd: i + 1,
+      }, f, bodyOf(lines, currentClassStart, i)))
+      currentClass = null
+      currentClassStart = -1
+      recordDepth = -1
+    }
 
-    // Class
     const cl = trimmed.match(/^(?:public\s+|internal\s+|abstract\s+|sealed\s+|static\s+)*class\s+(\w+)/)
     if (cl) {
-      currentClass = cl[1]; classDepth = prevDepth
-      r.push({ id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: i + 1, content: `class ${currentClass}` })
+      currentClass = cl[1]; classDepth = prevDepth; currentClassStart = i; recordDepth = prevDepth
       continue
     }
 
-    // Struct (acts like class for method scope)
     const st = trimmed.match(/^(?:public\s+|internal\s+)?struct\s+(\w+)/)
     if (st) {
-      currentClass = st[1]; classDepth = prevDepth
-      r.push({ id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: i + 1, content: `struct ${currentClass}` })
+      currentClass = st[1]; classDepth = prevDepth; currentClassStart = i; recordDepth = prevDepth
       continue
     }
 
-    // Record
     const rc = trimmed.match(/^(?:public\s+|internal\s+)?record\s+(\w+)/)
     if (rc) {
-      currentClass = rc[1]; classDepth = prevDepth; recordDepth = prevDepth
-      r.push({ id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: i + 1, content: `record ${currentClass}` })
+      currentClass = rc[1]; classDepth = prevDepth; currentClassStart = i; recordDepth = prevDepth
       continue
     }
 
-    // Interface
     const iface = trimmed.match(/^(?:public\s+|internal\s+)?interface\s+(\w+)/)
     if (iface) {
-      r.push({ id: `${f}:iface:${iface[1]}`, file: f, name: iface[1], type: "interface", line: i + 1, content: `interface ${iface[1]}` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:iface:${iface[1]}`, file: f, name: iface[1], type: "interface", line: i + 1,
+        content: `interface ${iface[1]}`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Enum
     const en = trimmed.match(/^(?:public\s+|internal\s+)?enum\s+(\w+)/)
     if (en) {
-      r.push({ id: `${f}:enum:${en[1]}`, file: f, name: en[1], type: "enum", line: i + 1, content: `enum ${en[1]}` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:enum:${en[1]}`, file: f, name: en[1], type: "enum", line: i + 1,
+        content: `enum ${en[1]}`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // Method/property
-    const md = trimmed.match(/^(?:(?:public|private|protected|internal)\s+)?(?:(?:static|virtual|override|abstract|async|sealed)\s+)*\w+(?:<[^>]+>)?\s+(\w+)\s*\(([^)]*)\)/)
+    const md = trimmed.match(/^(?:(?:public|private|protected|internal)\s+)?(?:(?:static|virtual|override|abstract|async|sealed)\s+)*\w+(?:\s*<[^\u003e]+\u003e)?\s+(\w+)\s*\(([^)]*)\)/)
     if (md) {
       const name = currentClass ? `${currentClass}.${md[1]}` : md[1]
-      r.push({ id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1, content: `method ${name}(${md[2]})` })
+      const endLine = findBlockEndByBrace(lines, i)
+      r.push(makeChunk({
+        id: `${f}:fn:${name}`, file: f, name, type: "function", line: i + 1,
+        content: `method ${name}(${md[2]})`,
+        lineEnd: endLine + 1,
+      }, f, bodyOf(lines, i, endLine)))
       continue
     }
 
-    // using directive
     const us = trimmed.match(/^using\s+(?:static\s+)?(?:\w+\.)*(\w+)/)
     if (us) {
       const name = us[1]
       if (name !== "*")
-        r.push({ id: `${f}:imp:${name}`, file: f, name, type: "import", line: i + 1, content: trimmed })
+        r.push(makeChunk({ id: `${f}:imp:${name}`, file: f, name, type: "import", line: i + 1, content: trimmed }, f))
     }
+  }
+
+  if (currentClass && currentClassStart >= 0) {
+    r.push(makeChunk({
+      id: `${f}:cls:${currentClass}`, file: f, name: currentClass, type: "class", line: currentClassStart + 1,
+      content: `class ${currentClass}`,
+      lineEnd: lines.length,
+    }, f, bodyOf(lines, currentClassStart, lines.length - 1)))
   }
 
   return r

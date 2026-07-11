@@ -6,7 +6,10 @@ export interface Chunk {
   name: string
   type: ChunkType
   line: number
+  lineEnd: number
   content: string
+  body: string
+  lang: string
 }
 
 export const IGNORE = new Set([
