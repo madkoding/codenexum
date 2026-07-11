@@ -1,32 +1,30 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { existsSync, unlinkSync, readFileSync, writeFileSync, rmSync } from "fs"
+import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, rmSync } from "fs"
 import { join } from "path"
-import { spawn } from "child_process"
 
-const SHIM_PATH = join(
-  process.env.HOME || "/tmp",
-  ".config/opencode/plugins/context-manager-loading-shim.ts"
-)
-const PLUGIN_NAME = "@madtech/opencode-context-manager-plugin"
-const BUN_CACHE = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/packages/@madtech/opencode-context-manager-plugin"
-)
-const BUN_CACHE_LATEST = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/packages/@madtech/opencode-context-manager-plugin@latest"
-)
-const VERSION_MARKER = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/.context-manager-version-check"
-)
-const PENDING_UPGRADE = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/.context-manager-pending-upgrade"
-)
-const NPM_REGISTRY = "https://registry.npmjs.org/@madtech%2fopencode-context-manager-plugin/latest"
+const PLUGIN_NAME = "context-manager-loading-shim"
+const PLUGIN_SCOPE = "@madtech"
+const PLUGIN_FILE = "opencode-context-manager-plugin.ts"
+const NPM_NAME = "@madtech/opencode-context-manager-plugin"
+const NPM_REGISTRY = `https://registry.npmjs.org/${NPM_NAME.replace("/", "%2f")}/latest`
 
-const ShimPlugin: Plugin = async ({ client }) => {
+const HOME = process.env.HOME || "/tmp"
+const OPENCODE_DIR = join(HOME, ".config/opencode")
+const PLUGIN_DIR = join(OPENCODE_DIR, "plugins")
+const SHIM_PATH = join(PLUGIN_DIR, `${PLUGIN_NAME}.ts`)
+const MAIN_PLUGIN_DIR = join(PLUGIN_DIR, PLUGIN_SCOPE)
+const MAIN_PLUGIN_PATH = join(MAIN_PLUGIN_DIR, PLUGIN_FILE)
+const SOURCE_DIR = join(PLUGIN_DIR, "src")
+const VERSION_MARKER = join(HOME, ".cache/opencode/.context-manager-version-check")
+const PENDING_UPGRADE = join(HOME, ".cache/opencode/.context-manager-pending-upgrade")
+
+interface ShimState {
+  installed: boolean
+  needsRestart: boolean
+  error?: string
+}
+
+const LoadingShim: Plugin = async ({ client }) => {
   const log = (level: string, message: string, extra?: Record<string, unknown>) =>
     client?.app?.log({ body: { service: "context-manager-shim", level: level as any, message, extra } }).catch(() => {})
 
@@ -41,120 +39,211 @@ const ShimPlugin: Plugin = async ({ client }) => {
     }
   }
 
-  const selfDestruct = () => {
-    try {
-      unlinkSync(SHIM_PATH)
-      log("info", "shim self-deleted (plugin not configured)")
-    } catch (e) {
-      log("warn", "shim self-delete failed", { error: String(e) })
-    }
+  // Fast path: show immediate feedback without blocking opencode boot.
+  toast("Context Manager", "Checking installation…", "info", 10000)
+  log("info", "shim loaded", { shimPath: SHIM_PATH })
+
+  const state: ShimState = await installOrUpdate(log, toast)
+
+  if (state.error) {
+    log("error", "shim failed", { error: state.error })
+    toast("Context Manager", `Setup failed: ${state.error}`, "error", 15000)
+    return {}
   }
 
-  let pluginEnabled = false
+  if (state.needsRestart) {
+    toast("Context Manager", "Installed. Restart opencode to activate.", "success", 10000)
+    return {}
+  }
+
+  if (!existsSync(MAIN_PLUGIN_PATH)) {
+    toast("Context Manager", "Plugin not found. Run install.sh or restart opencode.", "warning", 10000)
+    return {}
+  }
+
+  // Dynamically load the real plugin. This import happens after opencode TUI is up.
+  toast("Context Manager", "Loading…", "info", 5000)
   try {
-    const cfg = await client.config.get()
-    pluginEnabled = Array.isArray((cfg as any)?.plugin) && (cfg as any).plugin.some((p: string) => p.includes(PLUGIN_NAME))
-  } catch (e) {
-    log("warn", "config.get failed; assuming plugin not enabled", { error: String(e) })
-  }
-
-  if (!pluginEnabled) {
-    log("info", "main plugin not in config; removing shim")
-    selfDestruct()
-    return {}
-  }
-
-  const cached = existsSync(BUN_CACHE) || existsSync(BUN_CACHE_LATEST)
-
-  // ponytail: if pending-upgrade marker exists, launch a detached process that
-  // deletes the bun cache after 2s (gives opencode time to load plugin code into memory).
-  // The process survives opencode's exit; unref() prevents opencode from waiting on it.
-  if (existsSync(PENDING_UPGRADE)) {
-    log("info", "pending-upgrade marker found; scheduling cache deletion")
-    toast("Context Manager", "Applying update… restart opencode to complete.", "info", 15000)
-    try {
-      const cmd = `sleep 2 && rm -rf "${BUN_CACHE}" "${BUN_CACHE_LATEST}" "${PENDING_UPGRADE}"`
-      const child = spawn("sh", ["-c", cmd], { detached: true, stdio: "ignore" })
-      child.unref()
-      log("info", "detached cache-deletion process spawned", { pid: child.pid })
-    } catch (e) {
-      log("warn", "failed to spawn cache-deletion process", { error: String(e) })
-      try { rmSync(PENDING_UPGRADE, { force: true }) } catch {}
+    const mod = await import(MAIN_PLUGIN_PATH)
+    const realPlugin: Plugin = mod?.default ?? mod
+    if (typeof realPlugin !== "function") {
+      throw new Error(`Plugin file at ${MAIN_PLUGIN_PATH} does not export a default Plugin function`)
     }
+    const hooks = await realPlugin({ client, directory: (client as any)?.directory ?? process.cwd() } as any)
+    toast("Context Manager", "Ready", "success", 5000)
+    log("info", "plugin proxy active")
+    return hooks || {}
+  } catch (e) {
+    const msg = String(e)
+    log("error", "failed to load real plugin", { error: msg })
+    toast("Context Manager", `Load failed: ${msg}`, "error", 15000)
     return {}
   }
-
-  // When installed from local source there is no bun cache. Show a startup toast
-  // and let the main plugin (loaded by opencode from ~/.config/opencode/plugins/)
-  // do the real work.
-  log("info", "shim loaded — context-manager plugin active")
-  toast("Context Manager", "Indexing codebase in background…", "info", 15000)
-
-  if (!cached) {
-    log("info", "no npm cache — local-source install assumed")
-    return {}
-  }
-
-  // ponytail: version-check is read-only — never deletes cache while opencode is running.
-  // Throttled to once/day via a marker file containing ISO date.
-  // Marker is written BEFORE the fetch so throttle works even if fetch fails.
-  setImmediate(() => {
-    (async () => {
-      try {
-        const today = new Date().toISOString().slice(0, 10)
-        if (existsSync(VERSION_MARKER)) {
-          const last = readFileSync(VERSION_MARKER, "utf8").trim()
-          if (last === today) {
-            log("debug", "version-check already done today", { last })
-            return
-          }
-        }
-        writeFileSync(VERSION_MARKER, today, "utf8")
-
-        const cacheDir = existsSync(BUN_CACHE_LATEST) ? BUN_CACHE_LATEST : BUN_CACHE
-        const pkgPath = join(cacheDir, "node_modules", "@madtech", "opencode-context-manager-plugin", "package.json")
-        if (!existsSync(pkgPath)) {
-          log("warn", "cached package.json not found; skipping version-check", { pkgPath })
-          return
-        }
-        const localPkg = JSON.parse(readFileSync(pkgPath, "utf8"))
-        const localVersion = localPkg.version
-
-        // Promise.race with timeout — more reliable than AbortController in plugin context
-        let remoteVersion: string | null = null
-        try {
-          const res = await Promise.race([
-            fetch(NPM_REGISTRY),
-            new Promise<Response | null>(r => setTimeout(() => r(null), 3000)),
-          ])
-          if (res && res.ok) {
-            const remotePkg = await res.json()
-            remoteVersion = (remotePkg as any)?.version ?? null
-          }
-        } catch (e) {
-          log("warn", "npm fetch failed", { error: String(e) })
-        }
-
-        if (!remoteVersion) {
-          log("warn", "could not fetch remote version")
-          return
-        }
-
-        if (localVersion === remoteVersion) {
-          log("info", "plugin up to date", { local: localVersion, remote: remoteVersion })
-          return
-        }
-
-        log("info", "new version available; writing pending-upgrade marker", { local: localVersion, remote: remoteVersion })
-        writeFileSync(PENDING_UPGRADE, remoteVersion, "utf8")
-        toast("Context Manager", `Update ${remoteVersion} available (have ${localVersion}). Restart opencode to apply.`, "warning", 30000)
-      } catch (e) {
-        log("warn", "version-check failed", { error: String(e) })
-      }
-    })()
-  })
-
-  return {}
 }
 
-export default ShimPlugin
+async function installOrUpdate(log: (level: string, message: string, extra?: Record<string, unknown>) => void, toast: (title: string, message: string, variant?: any, duration?: number) => void): Promise<ShimState> {
+  return new Promise((resolve) => {
+    setImmediate(async () => {
+      try {
+        // 1. Determine source: prefer local repo if we can find it, otherwise npm.
+        const repoDir = findRepoDir()
+        if (repoDir) {
+          log("info", "local repo found", { repoDir })
+          const changed = await installFromRepo(repoDir, log)
+          if (changed) {
+            log("info", "installed/updated from local repo")
+            return resolve({ installed: true, needsRestart: true })
+          }
+          log("info", "local copy up to date")
+          return resolve({ installed: true, needsRestart: false })
+        }
+
+        // 2. No local repo: check npm version and trigger Bun install via marker.
+        // We never run bun install ourselves inside the plugin; we just write a marker
+        // that the next opencode restart will consume (or instruct the user).
+        toast("Context Manager", "Checking npm version…", "info", 5000)
+        const remoteVersion = await fetchRemoteVersion(log)
+        const localVersion = readLocalVersion()
+        if (!localVersion || (remoteVersion && remoteVersion !== localVersion)) {
+          writeFileSync(PENDING_UPGRADE, remoteVersion || "latest", "utf8")
+          log("info", "update available from npm", { local: localVersion, remote: remoteVersion })
+          toast("Context Manager", `Update ${remoteVersion} available. Restart opencode to apply.`, "warning", 15000)
+          return resolve({ installed: !!localVersion, needsRestart: true })
+        }
+
+        resolve({ installed: true, needsRestart: false })
+      } catch (e) {
+        resolve({ installed: false, needsRestart: false, error: String(e) })
+      }
+    })
+  })
+}
+
+async function installFromRepo(repoDir: string, log: (level: string, message: string, extra?: Record<string, unknown>) => void): Promise<boolean> {
+  const srcPlugin = join(repoDir, "plugins", PLUGIN_SCOPE, PLUGIN_FILE)
+  const repoSrcDir = join(repoDir, "src")
+  const repoSkillsDir = join(repoDir, "skills", "context-manager")
+
+  if (!existsSync(srcPlugin)) {
+    // Fallback to repo root plugins layout (older or dev layout)
+    const altPlugin = join(repoDir, "plugins", `${PLUGIN_SCOPE}-${PLUGIN_FILE}`)
+    if (!existsSync(altPlugin)) {
+      throw new Error(`Cannot find plugin file in repo: ${srcPlugin}`)
+    }
+  }
+
+  let changed = false
+  if (!existsSync(MAIN_PLUGIN_DIR)) mkdirSync(MAIN_PLUGIN_DIR, { recursive: true })
+  if (!existsSync(SOURCE_DIR)) mkdirSync(SOURCE_DIR, { recursive: true })
+
+  const pluginFiles = [srcPlugin]
+  const repoPluginRoot = join(repoDir, "plugins", `${PLUGIN_SCOPE}-${PLUGIN_FILE}`)
+  if (existsSync(repoPluginRoot)) pluginFiles.push(repoPluginRoot)
+
+  for (const src of pluginFiles) {
+    if (!existsSync(src)) continue
+    const dst = join(MAIN_PLUGIN_DIR, PLUGIN_FILE)
+    if (!fileMatches(src, dst)) {
+      copyFileSync(src, dst)
+      changed = true
+      log("info", "copied plugin file", { src, dst })
+    }
+  }
+
+  // Copy all src files recursively (simple flat copy is enough for our structure)
+  changed = copyDir(repoSrcDir, SOURCE_DIR, log) || changed
+
+  // Install skill if missing
+  const skillDstDir = join(OPENCODE_DIR, "skills", "context-manager")
+  const skillSrc = join(repoSkillsDir, "SKILL.md")
+  if (existsSync(skillSrc)) {
+    if (!existsSync(skillDstDir)) mkdirSync(skillDstDir, { recursive: true })
+    const skillDst = join(skillDstDir, "SKILL.md")
+    if (!fileMatches(skillSrc, skillDst)) {
+      copyFileSync(skillSrc, skillDst)
+      changed = true
+      log("info", "copied skill", { skillDst })
+    }
+  }
+
+  // Clean stale markers
+  try { rmSync(PENDING_UPGRADE, { force: true }) } catch {}
+  try { rmSync(VERSION_MARKER, { force: true }) } catch {}
+
+  return changed
+}
+
+function copyDir(src: string, dst: string, log: (level: string, message: string, extra?: Record<string, unknown>) => void): boolean {
+  if (!existsSync(src)) return false
+  if (!existsSync(dst)) mkdirSync(dst, { recursive: true })
+  let changed = false
+  for (const entry of require("fs").readdirSync(src, { withFileTypes: true })) {
+    const s = join(src, entry.name)
+    const d = join(dst, entry.name)
+    if (entry.isDirectory()) {
+      changed = copyDir(s, d, log) || changed
+    } else if (entry.isFile()) {
+      if (!fileMatches(s, d)) {
+        copyFileSync(s, d)
+        changed = true
+      }
+    }
+  }
+  return changed
+}
+
+function fileMatches(a: string, b: string): boolean {
+  if (!existsSync(b)) return false
+  try {
+    return readFileSync(a).equals(readFileSync(b))
+  } catch {
+    return false
+  }
+}
+
+function findRepoDir(): string | null {
+  // Heuristic: look for a sibling directory of the current working directory
+  // with the package name, or use CONTEXT_MANAGER_REPO env.
+  const envRepo = process.env.CONTEXT_MANAGER_REPO
+  if (envRepo && existsSync(join(envRepo, "src", "plugin.ts"))) return envRepo
+
+  const cwd = process.cwd()
+  const candidates = [
+    join(cwd, "..", "opencode-context-manager"),
+    join(HOME, "proyectos", "opencode-context-manager"),
+    join(HOME, "projects", "opencode-context-manager"),
+    join(HOME, "dev", "opencode-context-manager"),
+  ]
+  for (const c of candidates) {
+    if (existsSync(join(c, "src", "plugin.ts"))) return c
+  }
+  return null
+}
+
+async function fetchRemoteVersion(log: (level: string, message: string, extra?: Record<string, unknown>) => void): Promise<string | null> {
+  try {
+    const res = await Promise.race([
+      fetch(NPM_REGISTRY),
+      new Promise<Response | null>((r) => setTimeout(() => r(null), 3000)),
+    ])
+    if (res && res.ok) {
+      const data = await res.json()
+      return (data as any)?.version ?? null
+    }
+  } catch (e) {
+    log("warn", "npm version check failed", { error: String(e) })
+  }
+  return null
+}
+
+function readLocalVersion(): string | null {
+  const pkgPath = join(PLUGIN_DIR, "node_modules", NPM_NAME, "package.json")
+  if (!existsSync(pkgPath)) return null
+  try {
+    return JSON.parse(readFileSync(pkgPath, "utf8")).version
+  } catch {
+    return null
+  }
+}
+
+export default LoadingShim

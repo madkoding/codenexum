@@ -3,10 +3,9 @@ set -euo pipefail
 
 OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
-SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
-PLUGIN_FILE="@madtech/opencode-context-manager-plugin.ts"
-PLUGIN_NAME="@madtech/opencode-context-manager-plugin"
+SHIM_NAME="context-manager-loading-shim"
+SHIM_FILE="$SHIM_NAME.ts"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_PKG="$REPO_DIR/package.json"
 
@@ -28,20 +27,12 @@ log() {
 
 log info "installer started" target "$OPENCODE_DIR"
 
-# ── 1. Plugin file ──
-mkdir -p "$PLUGIN_DIR/@madtech"
-cp "$REPO_DIR/plugins/@madtech-opencode-context-manager-plugin.ts" "$PLUGIN_DIR/@madtech/opencode-context-manager-plugin.ts"
-log info "plugin copied" file "$PLUGIN_DIR/@madtech/opencode-context-manager-plugin.ts"
+# ── 1. Loading shim ──
+mkdir -p "$PLUGIN_DIR"
+cp "$REPO_DIR/plugins/context-manager-loading-shim.ts" "$PLUGIN_DIR/$SHIM_FILE"
+log info "shim copied" file "$PLUGIN_DIR/$SHIM_FILE"
 
-# ── 1a. Loading shim (instant-load local plugin for first-install feedback) ──
-cp "$REPO_DIR/plugins/context-manager-loading-shim.ts" "$PLUGIN_DIR/context-manager-loading-shim.ts"
-log info "shim copied" file "$PLUGIN_DIR/context-manager-loading-shim.ts"
-
-# ── 1b. Source files (needed for relative imports) ──
-cp -r "$REPO_DIR/src" "$PLUGIN_DIR/src"
-log info "source copied" dir "$PLUGIN_DIR/src"
-
-# ── 2. Ensure @opencode-ai/plugin is installed ──
+# ── 2. Ensure @opencode-ai/plugin is installed in opencode dir ──
 if [ ! -d "$OPENCODE_DIR/node_modules/@opencode-ai/plugin" ]; then
   log warn "plugin dependency missing" package "@opencode-ai/plugin"
   if [ ! -f "$OPENCODE_DIR/package.json" ]; then
@@ -62,21 +53,20 @@ if [ ! -d "$OPENCODE_DIR/node_modules/@opencode-ai/plugin" ]; then
   fi
 fi
 
-# ── 3. Add plugin to opencode config ──
-add_plugin_to_config() {
-  local cfg="$1" file="$2" name="$3"
+# ── 3. Add only the shim to opencode config ──
+add_shim_to_config() {
+  local cfg="$1" shim="$2"
   bun -e '
     const fs = require("fs");
     const path = "'"$cfg"'";
-    const file = "'"$file"'";
-    const name = "'"$name"'";
+    const shim = "'"$shim"'";
     function jlog(level, msg, extra) {
       process.stderr.write(JSON.stringify({level, service: "context-manager.install", message: msg, extra: extra||{}}) + "\n");
     }
     let txt = fs.existsSync(path) ? fs.readFileSync(path, "utf8") : null;
 
-    if (txt && txt.includes(file)) {
-      jlog("info", "plugin already in config", {path, plugin: file});
+    if (txt && txt.includes(shim)) {
+      jlog("info", "shim already in config", {path, shim});
       process.exit(0);
     }
 
@@ -95,10 +85,9 @@ add_plugin_to_config() {
     }
 
     if (!Array.isArray(obj.plugin)) obj.plugin = [];
-    // Prefer the local .ts file reference that opencode resolves from ~/.config/opencode/plugins/
-    if (!obj.plugin.includes(file)) obj.plugin.push(file);
-    // Remove stale npm-style name if present (we are replacing it with local source)
-    obj.plugin = obj.plugin.filter(p => p !== name && p !== name + ".ts");
+    // Remove stale context-manager plugin entries (old direct references)
+    obj.plugin = obj.plugin.filter(p => !p.includes("context-manager") || p === shim);
+    if (!obj.plugin.includes(shim)) obj.plugin.push(shim);
 
     if (!txt || txt.trim() === "") {
       obj["$schema"] = "https://opencode.ai/config.json";
@@ -106,17 +95,17 @@ add_plugin_to_config() {
 
     const out = JSON.stringify(obj, null, 2) + "\n";
     fs.writeFileSync(path, out, "utf8");
-    jlog("info", "plugin added to config", {path, plugin: file});
+    jlog("info", "shim added to config", {path, shim});
   '
 }
 
 if [ -f "$CONFIG" ]; then
-  add_plugin_to_config "$CONFIG" "$PLUGIN_FILE" "$PLUGIN_NAME"
+  add_shim_to_config "$CONFIG" "$SHIM_NAME"
 else
   cat > "$CONFIG" <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
-  "plugin": ["$PLUGIN_FILE"]
+  "plugin": ["$SHIM_NAME"]
 }
 EOF
   log info "config created" file "$CONFIG"
