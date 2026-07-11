@@ -14,7 +14,7 @@ import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn 
 import { parseSymbolRef } from "../src/resolve"
 import { buildSystemPrompt } from "../src/prompt"
 import { compressToolOutput } from "../src/compress"
-import { recordTokens, getFillRatio, clearSession } from "../src/budget"
+import { recordTokens, getFillRatio, clearSession, recordSearch, recordFileRead, estimateSavings, getUsage } from "../src/budget"
 import { compactMessages } from "../src/compact"
 
 const SHIM_SOURCE = `import type { Plugin } from "@opencode-ai/plugin"
@@ -416,7 +416,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
           compact: tool.schema.boolean().optional().describe("Omit snippets, return only 'type name @ file:line-lineEnd' per result. Defaults to true when n>5."),
           snippet: tool.schema.number().optional().default(20).describe("Max lines of body to show per result (0 = no snippet)."),
         },
-        async execute(args) {
+        async execute(args, c) {
           const db = state.db
           if (!db) return "Plugin still initializing. Try again in a second."
           if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
@@ -426,9 +426,12 @@ const _plugin: Plugin = async ({ client, directory }) => {
           if (!results.length) return "No matches found."
           const projectRoot = dbGetMeta(db, "projectRoot") || ""
           const isCompact = args.compact ?? limit > 5
+          const snippetLines = args.snippet ?? (isCompact ? 0 : 20)
+          const usedSnippet = !isCompact && snippetLines > 0 && results.some(r => r.body)
+          recordSearch((c as any)?.sessionID, usedSnippet)
           return formatSearchResults(results, projectRoot, {
             compact: isCompact,
-            snippetLines: args.snippet ?? (isCompact ? 0 : 20),
+            snippetLines,
           })
         },
       }),
@@ -442,6 +445,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
           const byLang = dbStatsByLang(state.db)
           const sid = (c as any)?.sessionID
           const fill = getFillRatio(sid)
+          const usage = getUsage(sid)
           const lines = [
             `Project: ${dbGetMeta(state.db, "projectRoot")}`,
             `Indexed: ${dbGetMeta(state.db, "indexedAt")}`,
@@ -451,6 +455,10 @@ const _plugin: Plugin = async ({ client, directory }) => {
             lines.push(`  ${ext}: ${n}`)
           lines.push(`Files:   ${dbFileCount(state.db)}`)
           lines.push(`Context fill: ${(fill * 100).toFixed(0)}%`)
+          lines.push(`Searches this session: ${usage.searchQueries || 0}`)
+          lines.push(`Snippet-only answers: ${usage.snippetsUsed || 0}`)
+          lines.push(`Files read via search: ${usage.filesRead || 0}`)
+          lines.push(`Estimated tokens saved: ~${estimateSavings(usage).toLocaleString()}`)
           return lines.join("\n")
         },
       }),
@@ -554,6 +562,12 @@ const _plugin: Plugin = async ({ client, directory }) => {
       const fill = getFillRatio(sid)
       const n = compactMessages(msgs as any, fill)
       if (n > 0) log("info", "compacted old tool outputs", { count: n, fillRatio: fill })
+    },
+    async "tool.execute.before"(input, _output) {
+      const t = (input as { tool: string }).tool
+      if (t === "read") {
+        recordFileRead((input as { sessionID: string }).sessionID)
+      }
     },
     async "tool.execute.after"(input, output) {
       const t = (input as { tool?: string })?.tool || ""

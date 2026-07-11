@@ -17,6 +17,8 @@ export function compactMessages(messages: MsgEntry[], fillRatio: number): number
   if (fillRatio < FILL_THRESHOLD) return 0
   let compacted = 0
   const total = messages.length
+  const seenOutputs = new Set<string>()
+
   for (let i = 0; i < total - KEEP_RECENT_TURNS; i++) {
     for (const part of messages[i].parts) {
       if (part.type !== "tool") continue
@@ -24,8 +26,21 @@ export function compactMessages(messages: MsgEntry[], fillRatio: number): number
       if (!st || st.status !== "completed" || !st.output) continue
       if (st.time?.compacted) continue
       if (st.output.length < OUTPUT_MIN_CHARS) continue
+
       const toolName = (part as ToolPart).tool || "tool"
       const hint = summarizeInput(toolName, (st as ToolState).input)
+
+      // Deduplicate identical outputs (common with repeated grep/read cycles).
+      const fingerprint = `${toolName}:${st.output.slice(0, 200)}`
+      if (seenOutputs.has(fingerprint)) {
+        st.output = `[${toolName}${hint}] → (duplicate output omitted; see earlier result)`
+        st.time = st.time || {}
+        st.time.compacted = Date.now()
+        compacted++
+        continue
+      }
+      seenOutputs.add(fingerprint)
+
       const newOut = `[${toolName}${hint}] → (output omitted: ${st.output.length} chars; rerun if needed)`
       st.output = newOut
       st.time = st.time || {}

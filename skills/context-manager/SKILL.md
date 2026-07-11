@@ -90,6 +90,15 @@ When context is limited, allocate tokens roughly:
 - 30%: dependency signatures + current task reasoning
 - 20%: search results and summaries
 
+## Snippet-Only Mode
+
+Search results now include a body snippet and exact line range. **If the snippet is enough to answer the user's question, do not read the file.** This is the default mode and saves the most tokens.
+
+When to open the file:
+- The snippet is truncated mid-block or mid-function.
+- You need to see surrounding definitions or multiple related symbols.
+- The user explicitly asks for the full file or line range beyond the snippet.
+
 ## Guiding the User
 
 If context is getting tight:

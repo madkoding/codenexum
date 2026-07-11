@@ -76,3 +76,33 @@ test("compactMessages: marks compacted time", () => {
   compactMessages(msgs, 0.9)
   expect(msgs[0].parts[0].state.time.compacted).toBeGreaterThan(0)
 })
+
+test("compactMessages: deduplicates identical tool outputs", () => {
+  const long = "x".repeat(2000)
+  const msgs = [
+    mkMsg([mkTool("read", long, { path: "src/a.ts" })]),
+    mkMsg([mkTool("read", long, { path: "src/a.ts" })]),
+    mkMsg([]),
+    mkMsg([]),
+  ]
+  const n = compactMessages(msgs, 0.9)
+  expect(n).toBe(2)
+  expect(msgs[0].parts[0].state.output).toContain("omitted")
+  expect(msgs[1].parts[0].state.output).toContain("duplicate")
+})
+
+test("compactMessages: does not deduplicate different outputs", () => {
+  const long1 = "x".repeat(2000)
+  const long2 = "y".repeat(2000)
+  const msgs = [
+    mkMsg([mkTool("read", long1, { path: "src/a.ts" })]),
+    mkMsg([mkTool("read", long2, { path: "src/b.ts" })]),
+    mkMsg([]),
+    mkMsg([]),
+  ]
+  const n = compactMessages(msgs, 0.9)
+  expect(n).toBe(2)
+  expect(msgs[0].parts[0].state.output).toContain("omitted")
+  expect(msgs[1].parts[0].state.output).toContain("omitted")
+  expect(msgs[1].parts[0].state.output).not.toContain("duplicate")
+})
