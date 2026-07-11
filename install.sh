@@ -5,7 +5,7 @@ OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
 SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
-PLUGIN_FILE="@madtech-opencode-context-manager-plugin.ts"
+PLUGIN_FILE="@madtech/opencode-context-manager-plugin"
 PLUGIN_NAME="@madtech/opencode-context-manager-plugin"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_PKG="$REPO_DIR/package.json"
@@ -29,9 +29,9 @@ log() {
 log info "installer started" target "$OPENCODE_DIR"
 
 # ── 1. Plugin file ──
-mkdir -p "$PLUGIN_DIR"
-cp "$REPO_DIR/plugins/@madtech-opencode-context-manager-plugin.ts" "$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
-log info "plugin copied" file "$PLUGIN_DIR/@madtech-opencode-context-manager-plugin.ts"
+mkdir -p "$PLUGIN_DIR/@madtech"
+cp "$REPO_DIR/plugins/@madtech-opencode-context-manager-plugin.ts" "$PLUGIN_DIR/@madtech/opencode-context-manager-plugin"
+log info "plugin copied" file "$PLUGIN_DIR/@madtech/opencode-context-manager-plugin"
 
 # ── 1a. Loading shim (instant-load local plugin for first-install feedback) ──
 cp "$REPO_DIR/plugins/context-manager-loading-shim.ts" "$PLUGIN_DIR/context-manager-loading-shim.ts"
@@ -98,7 +98,7 @@ add_plugin_to_config() {
     // Prefer the local .ts file reference that opencode resolves from ~/.config/opencode/plugins/
     if (!obj.plugin.includes(file)) obj.plugin.push(file);
     // Remove stale npm-style name if present (we are replacing it with local source)
-    obj.plugin = obj.plugin.filter(p => p !== name);
+    obj.plugin = obj.plugin.filter(p => p !== name && p !== name + ".ts");
 
     if (!txt || txt.trim() === "") {
       obj["$schema"] = "https://opencode.ai/config.json";
