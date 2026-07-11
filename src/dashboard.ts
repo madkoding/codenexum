@@ -31,22 +31,28 @@ export function stopDashboard(): void {
 export function startDashboard(db: Database, sessionID?: string): DashboardState {
   if (server) return state
   try {
-    server = Bun.serve({
-      port: DEFAULT_DASHBOARD_PORT,
-      hostname: "127.0.0.1",
-      fetch(req) {
-        const url = new URL(req.url)
-        if (!isLocalhost(url.hostname)) {
-          return new Response("Forbidden: localhost only", { status: 403 })
-        }
-        if (url.pathname === "/") return new Response(dashboardHtml(db, sessionID), { headers: { "Content-Type": "text/html" } })
-        if (url.pathname === "/api/stats") return json(stats(db, sessionID))
-        if (url.pathname === "/api/recent-searches") return json(recentSearches(sessionID))
-        if (url.pathname === "/api/health") return json({ ok: true })
-        return new Response("Not found", { status: 404 })
-      },
-    })
-    const port = server.port ?? DEFAULT_DASHBOARD_PORT
+    // Try default port first; if occupied, let Bun pick an ephemeral port.
+    let usedPort = DEFAULT_DASHBOARD_PORT
+    try {
+      server = Bun.serve({
+        port: DEFAULT_DASHBOARD_PORT,
+        hostname: "127.0.0.1",
+        fetch(req) { return handleRequest(req, db, sessionID) },
+      })
+    } catch (e) {
+      if (String(e).includes("EADDRINUSE")) {
+        server = Bun.serve({
+          port: 0,
+          hostname: "127.0.0.1",
+          fetch(req) { return handleRequest(req, db, sessionID) },
+        })
+        usedPort = server.port ?? usedPort
+      } else {
+        throw e
+      }
+    }
+    const port = server.port ?? usedPort
+    if (!port) throw new Error("Bun.serve did not return a port")
     const url = `http://127.0.0.1:${port}`
     state = { port, url, ready: true }
     return state
@@ -54,6 +60,18 @@ export function startDashboard(db: Database, sessionID?: string): DashboardState
     state = { port: DEFAULT_DASHBOARD_PORT, url: "", ready: false, error: String(e) }
     return state
   }
+}
+
+function handleRequest(req: Request, db: Database, sessionID?: string): Response {
+  const url = new URL(req.url)
+  if (!isLocalhost(url.hostname)) {
+    return new Response("Forbidden: localhost only", { status: 403 })
+  }
+  if (url.pathname === "/") return new Response(dashboardHtml(db, sessionID), { headers: { "Content-Type": "text/html" } })
+  if (url.pathname === "/api/stats") return json(stats(db, sessionID))
+  if (url.pathname === "/api/recent-searches") return json(recentSearches(sessionID))
+  if (url.pathname === "/api/health") return json({ ok: true })
+  return new Response("Not found", { status: 404 })
 }
 
 function isLocalhost(hostname: string): boolean {

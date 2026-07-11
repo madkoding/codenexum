@@ -345,18 +345,20 @@ const _plugin: Plugin = async ({ client, directory }) => {
         ready = true
       }
 
-      // Start local dashboard (localhost-only). Never block opencode init.
-      try {
-        const dash = startDashboard(db)
-        if (dash.ready) {
-          log("info", "dashboard running", { url: dash.url })
-          toast("Context Manager", `Dashboard: ${dash.url} — run context_dashboard to reopen`, "success", 10000)
-        } else {
-          log("warn", "dashboard failed to start", { error: dash.error })
+      // Start local dashboard (localhost-only). Defer so it never blocks opencode init.
+      setTimeout(() => {
+        if (!db) return
+        try {
+          const dash = startDashboard(db)
+          if (dash.ready) {
+            log("info", "dashboard running", { url: dash.url })
+          } else {
+            log("warn", "dashboard failed to start", { error: dash.error })
+          }
+        } catch (e) {
+          log("warn", "dashboard start error", { error: String(e) })
         }
-      } catch (e) {
-        log("warn", "dashboard start error", { error: String(e) })
-      }
+      }, 2000)
     } catch (e) {
       log("error", "plugin init failed", { error: String(e) })
       toast("Context Manager", `Init failed: ${String(e)}`, "error", 15000)
