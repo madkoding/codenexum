@@ -5,7 +5,7 @@ OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
 SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
-PLUGIN_REL="./plugins/@madtech-opencode-context-manager-plugin.ts"
+PLUGIN_FILE="@madtech-opencode-context-manager-plugin.ts"
 PLUGIN_NAME="@madtech/opencode-context-manager-plugin"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_PKG="$REPO_DIR/package.json"
@@ -64,19 +64,19 @@ fi
 
 # ── 3. Add plugin to opencode config ──
 add_plugin_to_config() {
-  local cfg="$1" rel="$2" name="$3"
+  local cfg="$1" file="$2" name="$3"
   bun -e '
     const fs = require("fs");
     const path = "'"$cfg"'";
-    const rel = "'"$rel"'";
+    const file = "'"$file"'";
     const name = "'"$name"'";
     function jlog(level, msg, extra) {
       process.stderr.write(JSON.stringify({level, service: "context-manager.install", message: msg, extra: extra||{}}) + "\n");
     }
     let txt = fs.existsSync(path) ? fs.readFileSync(path, "utf8") : null;
 
-    if (txt && txt.includes(name)) {
-      jlog("info", "plugin already in config", {path, name});
+    if (txt && txt.includes(file)) {
+      jlog("info", "plugin already in config", {path, plugin: file});
       process.exit(0);
     }
 
@@ -95,7 +95,10 @@ add_plugin_to_config() {
     }
 
     if (!Array.isArray(obj.plugin)) obj.plugin = [];
-    if (!obj.plugin.includes(rel)) obj.plugin.push(rel);
+    // Prefer the local .ts file reference that opencode resolves from ~/.config/opencode/plugins/
+    if (!obj.plugin.includes(file)) obj.plugin.push(file);
+    // Remove stale npm-style name if present (we are replacing it with local source)
+    obj.plugin = obj.plugin.filter(p => p !== name);
 
     if (!txt || txt.trim() === "") {
       obj["$schema"] = "https://opencode.ai/config.json";
@@ -103,17 +106,17 @@ add_plugin_to_config() {
 
     const out = JSON.stringify(obj, null, 2) + "\n";
     fs.writeFileSync(path, out, "utf8");
-    jlog("info", "plugin added to config", {path, plugin: rel});
+    jlog("info", "plugin added to config", {path, plugin: file});
   '
 }
 
 if [ -f "$CONFIG" ]; then
-  add_plugin_to_config "$CONFIG" "$PLUGIN_REL" "$PLUGIN_NAME"
+  add_plugin_to_config "$CONFIG" "$PLUGIN_FILE" "$PLUGIN_NAME"
 else
   cat > "$CONFIG" <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
-  "plugin": ["$PLUGIN_REL"]
+  "plugin": ["$PLUGIN_FILE"]
 }
 EOF
   log info "config created" file "$CONFIG"

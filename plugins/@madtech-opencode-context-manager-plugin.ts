@@ -345,20 +345,24 @@ const _plugin: Plugin = async ({ client, directory }) => {
         ready = true
       }
 
-      // Start local dashboard (localhost-only). Defer so it never blocks opencode init.
-      setTimeout(() => {
-        if (!db) return
-        try {
-          const dash = startDashboard(db)
-          if (dash.ready) {
-            log("info", "dashboard running", { url: dash.url })
-          } else {
-            log("warn", "dashboard failed to start", { error: dash.error })
+      // Start local dashboard (localhost-only) only when explicitly enabled.
+      // Auto-starting a Bun.serve() during plugin init has caused TUI boot hangs
+      // in some opencode versions, so it is now opt-in via env/context_dashboard.
+      if (process.env.CONTEXT_MANAGER_DASHBOARD_AUTO_START === "1") {
+        setTimeout(() => {
+          if (!db) return
+          try {
+            const dash = startDashboard(db)
+            if (dash.ready) {
+              log("info", "dashboard running", { url: dash.url })
+            } else {
+              log("warn", "dashboard failed to start", { error: dash.error })
+            }
+          } catch (e) {
+            log("warn", "dashboard start error", { error: String(e) })
           }
-        } catch (e) {
-          log("warn", "dashboard start error", { error: String(e) })
-        }
-      }, 2000)
+        }, 2000)
+      }
     } catch (e) {
       log("error", "plugin init failed", { error: String(e) })
       toast("Context Manager", `Init failed: ${String(e)}`, "error", 15000)
@@ -537,11 +541,16 @@ const _plugin: Plugin = async ({ client, directory }) => {
         },
       }),
       context_dashboard: tool({
-        description: "Open the Context Manager web dashboard in your browser. Shows live index stats, token savings, hot files, and recent searches.",
+        description: "Open the Context Manager web dashboard in your browser. Shows live index stats, token savings, hot files, and recent searches. Set CONTEXT_MANAGER_DASHBOARD_AUTO_START=1 to start it automatically on opencode launch.",
         args: {},
-        async execute() {
-          const dash = getDashboardState()
-          if (!dash.ready) return "Dashboard is not running. Restart opencode to start it."
+        async execute(args, c) {
+          const db = state.db
+          if (!db) return "Plugin still initializing. Try again in a second."
+          let dash = getDashboardState()
+          if (!dash.ready) {
+            dash = startDashboard(db, (c as any)?.sessionID)
+          }
+          if (!dash.ready) return `Dashboard failed to start: ${dash.error || "unknown error"}`
           return `Context Manager dashboard: ${dash.url} (localhost only)`
         },
       }),
