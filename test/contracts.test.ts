@@ -408,7 +408,7 @@ test("C10d: loading shim exists and exports a Plugin function", async () => {
   const src = await shim.text()
   expect(src).toContain("export default ShimPlugin")
   expect(src).toContain("const ShimPlugin: Plugin =")
-  expect(src).toContain("Installing")
+  expect(src).toContain("Indexing codebase")
   expect(src).toContain("showToast")
 })
 

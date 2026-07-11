@@ -84,18 +84,14 @@ const ShimPlugin: Plugin = async ({ client }) => {
     return {}
   }
 
+  // When installed from local source there is no bun cache. Show a startup toast
+  // and let the main plugin (loaded by opencode from ~/.config/opencode/plugins/)
+  // do the real work.
+  log("info", "shim loaded — context-manager plugin active")
+  toast("Context Manager", "Indexing codebase in background…", "info", 15000)
+
   if (!cached) {
-    log("info", "shim loaded — main plugin is being installed/downloaded")
-    toast("Context Manager", "Installing plugin…", "info", 30000)
-
-    setTimeout(() => {
-      toast("Context Manager", "Still loading… (first install can take 30-60s)", "info", 30000)
-    }, 15000)
-
-    setTimeout(() => {
-      toast("Context Manager", "If the TUI is still blank, the main plugin is still downloading. Please wait.", "info", 30000)
-    }, 45000)
-
+    log("info", "no npm cache — local-source install assumed")
     return {}
   }
 

@@ -223,36 +223,6 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
     client?.app?.log({ body: { service: "opencode-context-manager-plugin", level: level as any, message, extra } }).catch(() => {})
 
-  const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
-    Promise.race([p.then(v => v, () => null), new Promise<null>(r => setTimeout(() => r(null), ms))])
-
-  const toast = async (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 10000) => {
-    const fullMessage = `[${title}] ${message}`
-    log("info", "toast", { title, message, variant, duration })
-    const tui = (client as any)?.tui
-    if (!tui) {
-      log("warn", "client.tui not available")
-      return
-    }
-    if (typeof tui.showToast === "function") {
-      const r = await withTimeout(tui.showToast({ body: { title, message, variant, duration } }), 3000)
-      if (r !== null) { log("debug", "showToast result", { result: r }); return }
-      log("warn", "showToast timed out")
-    }
-    if (typeof tui.publish === "function") {
-      const r = await withTimeout(tui.publish({ body: { type: "tui.toast.show", properties: { title, message, variant, duration } } }), 3000)
-      if (r !== null) { log("debug", "publish toast result", { result: r }); return }
-      log("warn", "publish toast timed out")
-    }
-    if (typeof tui.appendPrompt === "function") {
-      const r = await withTimeout(tui.appendPrompt({ body: { text: fullMessage } }), 3000)
-      if (r !== null) { log("debug", "appended to prompt"); return }
-      log("warn", "appendPrompt timed out")
-    } else {
-      log("warn", "no toast API available", { tuiKeys: Object.keys(tui) })
-    }
-  }
-
   const HOME = process.env.HOME || "/tmp"
   const dbDir = join(HOME, ".cache/opencode")
   const dbPath = join(dbDir, "context-manager.sqlite")
@@ -263,7 +233,6 @@ const _plugin: Plugin = async ({ client, directory }) => {
   const state = { get db() { return db }, get ready() { return ready } }
 
   log("info", "plugin initialized", { directory })
-  toast("Context Manager", "Indexing codebase in background…", "info", 15000)
 
   setImmediate(() => {
     (async () => {
@@ -280,7 +249,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
         log("info", "schema version mismatch; clearing index for reindex", { current: currentSchemaVersion, target: SCHEMA_VERSION })
         dbClear(db)
         dbSetSchemaVersion(db, SCHEMA_VERSION)
-        toast("Context Manager", "Index schema updated; reindexing project…", "info", 15000)
+        log("info", "index schema updated; reindexing project")
       }
 
       const skillDstDir = join(HOME, ".config/opencode/skills/context-manager")
@@ -310,11 +279,11 @@ const _plugin: Plugin = async ({ client, directory }) => {
               if (!db) return
               const { files, chunks, fileHashes, edges, capped } = e.data
               if (chunks.length === 0) {
-                toast("Context Manager", "No code files found in this directory", "warning", 10000)
+                log("warn", "no code files found in this directory")
               } else if (capped) {
-                toast("Index capped", `Indexed ${chunks.length} chunks (hit cap at ${files} files). Pass a narrower path to context_analyze.`, "warning", 15000)
+                log("warn", "index capped", { files, chunks: chunks.length })
               } else {
-                toast("Index ready", `Indexed ${chunks.length} chunks from ${files} files`, "success", 8000)
+                log("info", "index ready", { files, chunks: chunks.length })
               }
               dbInsertChunks(db, chunks)
               dbInsertEdges(db, edges || [])
@@ -332,13 +301,11 @@ const _plugin: Plugin = async ({ client, directory }) => {
           }
           worker.onerror = (err) => {
             log("error", "index worker failed", { error: String(err) })
-            toast("Context Manager", "Index worker failed — run context_analyze manually", "error", 15000)
             ready = true
             worker.terminate()
           }
         } catch (e) {
           log("error", "could not start index worker", { error: String(e) })
-          toast("Context Manager", "Could not start index worker", "error", 15000)
           ready = true
         }
       } else {
@@ -365,7 +332,6 @@ const _plugin: Plugin = async ({ client, directory }) => {
       }
     } catch (e) {
       log("error", "plugin init failed", { error: String(e) })
-      toast("Context Manager", `Init failed: ${String(e)}`, "error", 15000)
       ready = true
     }
     })()
@@ -390,9 +356,9 @@ const _plugin: Plugin = async ({ client, directory }) => {
           dbSetMeta(state.db, "indexedAt", new Date().toISOString())
           log("info", "indexed project", { files, chunks: chunks.length, edges: edges.length, root, capped })
           if (capped) {
-            toast("Index capped", `Indexed ${chunks.length} chunks (hit cap at ${files} files). Pass a narrower path.`, "warning", 15000)
+            log("warn", "index capped", { files, chunks: chunks.length })
           } else {
-            toast("Index ready", `Indexed ${chunks.length} chunks from ${files} files`, "success", 8000)
+            log("info", "index ready", { files, chunks: chunks.length })
           }
           const fns = chunks.filter(x => x.type === "function").length
           const cls = chunks.filter(x => x.type === "class").length
