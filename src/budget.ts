@@ -4,8 +4,19 @@
 // ponytail: no context-limit accessor; default 200k, override via env.
 
 const DEFAULT_CONTEXT_LIMIT = parseInt(process.env.CONTEXT_MANAGER_CONTEXT_LIMIT || "200000", 10)
+const MAX_RECENT_SEARCHES = 20
 
-interface SessionUsage { input: number; output: number; searchQueries?: number; snippetsUsed?: number; filesRead?: number }
+export interface SearchRecord { query: string; usedSnippet: boolean; ts: number }
+
+export interface SessionUsage {
+  input: number
+  output: number
+  searchQueries?: number
+  snippetsUsed?: number
+  filesRead?: number
+  recentSearches?: SearchRecord[]
+  compactions?: number
+}
 
 const sessions = new Map<string, SessionUsage>()
 let lastSessionID: string | undefined
@@ -19,11 +30,14 @@ export function recordTokens(sessionID: string | undefined, input: number, outpu
   sessions.set(sessionID, cur)
 }
 
-export function recordSearch(sessionID: string | undefined, usedSnippet = false): void {
+export function recordSearch(sessionID: string | undefined, query: string, usedSnippet = false): void {
   if (!sessionID) return
-  const cur = sessions.get(sessionID) || { input: 0, output: 0, searchQueries: 0, snippetsUsed: 0 }
+  const cur = sessions.get(sessionID) || { input: 0, output: 0, searchQueries: 0, snippetsUsed: 0, recentSearches: [] }
   cur.searchQueries = (cur.searchQueries || 0) + 1
   if (usedSnippet) cur.snippetsUsed = (cur.snippetsUsed || 0) + 1
+  cur.recentSearches = cur.recentSearches || []
+  cur.recentSearches.unshift({ query, usedSnippet, ts: Date.now() })
+  if (cur.recentSearches.length > MAX_RECENT_SEARCHES) cur.recentSearches.length = MAX_RECENT_SEARCHES
   sessions.set(sessionID, cur)
 }
 
@@ -31,6 +45,13 @@ export function recordFileRead(sessionID: string | undefined): void {
   if (!sessionID) return
   const cur = sessions.get(sessionID) || { input: 0, output: 0, filesRead: 0 }
   cur.filesRead = (cur.filesRead || 0) + 1
+  sessions.set(sessionID, cur)
+}
+
+export function recordCompaction(sessionID: string | undefined): void {
+  if (!sessionID) return
+  const cur = sessions.get(sessionID) || { input: 0, output: 0, compactions: 0 }
+  cur.compactions = (cur.compactions || 0) + 1
   sessions.set(sessionID, cur)
 }
 

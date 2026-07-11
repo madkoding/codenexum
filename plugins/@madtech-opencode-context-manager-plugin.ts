@@ -14,8 +14,9 @@ import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn 
 import { parseSymbolRef } from "../src/resolve"
 import { buildSystemPrompt } from "../src/prompt"
 import { compressToolOutput } from "../src/compress"
-import { recordTokens, getFillRatio, clearSession, recordSearch, recordFileRead, estimateSavings, getUsage } from "../src/budget"
-import { compactMessages } from "../src/compact"
+import { recordTokens, getFillRatio, clearSession, recordSearch, recordFileRead, estimateSavings, getUsage, recordCompaction } from "../src/budget"
+import { compactMessages, getCompactionCount } from "../src/compact"
+import { startDashboard, stopDashboard, getDashboardState } from "../src/dashboard"
 
 const SHIM_SOURCE = `import type { Plugin } from "@opencode-ai/plugin"
 import { existsSync, unlinkSync, readFileSync, writeFileSync, rmSync } from "fs"
@@ -343,6 +344,19 @@ const _plugin: Plugin = async ({ client, directory }) => {
       } else {
         ready = true
       }
+
+      // Start local dashboard (localhost-only). Never block opencode init.
+      try {
+        const dash = startDashboard(db)
+        if (dash.ready) {
+          log("info", "dashboard running", { url: dash.url })
+          toast("Context Manager", `Dashboard: ${dash.url} — run context_dashboard to reopen`, "success", 10000)
+        } else {
+          log("warn", "dashboard failed to start", { error: dash.error })
+        }
+      } catch (e) {
+        log("warn", "dashboard start error", { error: String(e) })
+      }
     } catch (e) {
       log("error", "plugin init failed", { error: String(e) })
       toast("Context Manager", `Init failed: ${String(e)}`, "error", 15000)
@@ -428,7 +442,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
           const isCompact = args.compact ?? limit > 5
           const snippetLines = args.snippet ?? (isCompact ? 0 : 20)
           const usedSnippet = !isCompact && snippetLines > 0 && results.some(r => r.body)
-          recordSearch((c as any)?.sessionID, usedSnippet)
+          recordSearch((c as any)?.sessionID, args.query, usedSnippet)
           return formatSearchResults(results, projectRoot, {
             compact: isCompact,
             snippetLines,
@@ -520,6 +534,15 @@ const _plugin: Plugin = async ({ client, directory }) => {
           return "Index cleared."
         },
       }),
+      context_dashboard: tool({
+        description: "Open the Context Manager web dashboard in your browser. Shows live index stats, token savings, hot files, and recent searches.",
+        args: {},
+        async execute() {
+          const dash = getDashboardState()
+          if (!dash.ready) return "Dashboard is not running. Restart opencode to start it."
+          return `Context Manager dashboard: ${dash.url} (localhost only)`
+        },
+      }),
     },
     async event({ event }) {
       if (!state.db) return
@@ -561,7 +584,10 @@ const _plugin: Plugin = async ({ client, directory }) => {
       const sid = msgs[0]?.info?.sessionID
       const fill = getFillRatio(sid)
       const n = compactMessages(msgs as any, fill)
-      if (n > 0) log("info", "compacted old tool outputs", { count: n, fillRatio: fill })
+      if (n > 0) {
+        recordCompaction(sid)
+        log("info", "compacted old tool outputs", { count: n, fillRatio: fill })
+      }
     },
     async "tool.execute.before"(input, _output) {
       const t = (input as { tool: string }).tool

@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite"
-import { dbChunkCount, dbFileCount, dbGetMeta, dbStatsByLang, dbTopFiles, dbFindImpacted, dbEdgeCount } from "./store"
+import { dbChunkCount, dbFileCount, dbGetMeta, dbStatsByLang, dbTopFiles, dbFindLoadedFiles, dbEdgeCount } from "./store"
 
 export function buildSystemPrompt(db: Database, ready = true): string {
   if (!ready) {
@@ -47,30 +47,14 @@ export function buildSystemPrompt(db: Database, ready = true): string {
     `- context_impact <file1> [<file2> ...] — files/symbols that depend on the given files.`,
     `- context_analyze [path] — re-index project or subdirectory.`,
     `- context_stats — show index statistics.`,
+    `- context_dashboard — open the local web dashboard (http://127.0.0.1:3567).`,
     ``,
     `Workflow:`,
     `1. ALWAYS use context_search before reading files.`,
     `2. If the snippet is enough, answer directly without opening the file.`,
     `3. Before changing a hot file, run context_impact to see what could break.`,
     `4. For tracing a symbol, use context_related.`,
+    `5. For a live overview, run context_dashboard.`,
     `</context-manager>`,
   ].join("\n")
-}
-
-// Files that are imported/extended/called by the most other files.
-function dbFindLoadedFiles(db: Database, limit = 5): { file: string; n: number }[] {
-  const rows = queryAll(
-    db,
-    "SELECT target_file, count(DISTINCT source_file) as n FROM edges GROUP BY target_file ORDER BY n DESC LIMIT ?",
-    limit,
-  ) as { target_file: string; n: number }[]
-  return rows.map(({ target_file, n }) => ({ file: target_file, n }))
-}
-
-// Bun's sqlite types are strict about parameter binding. We cast the db handle
-// for run/query calls because the runtime API accepts positional arguments,
-// while the generated types only accept template-literal style bindings.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function queryAll(db: Database, sql: string, ...args: any[]): any[] {
-  return (db as any).query(sql).all(...args)
 }

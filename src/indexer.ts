@@ -67,6 +67,20 @@ export function indexProject(root: string, maxFiles = getMaxFiles()): { files: n
 
 export type LogFn = (level: string, msg: string, extra?: Record<string, unknown>) => void
 
+export interface IndexEvent { file: string; ts: number; action: "add" | "change" | "delete" }
+
+const recentEvents: IndexEvent[] = []
+const MAX_RECENT_EVENTS = 20
+
+export function recordIndexEvent(event: IndexEvent): void {
+  recentEvents.unshift(event)
+  if (recentEvents.length > MAX_RECENT_EVENTS) recentEvents.length = MAX_RECENT_EVENTS
+}
+
+export function getRecentIndexEvents(): IndexEvent[] {
+  return recentEvents.slice()
+}
+
 export function updateFile(db: Database, fp: string, log?: LogFn): boolean {
   const ext = extname(fp)
   if (!CODE_EXTS.has(ext)) return false
@@ -84,6 +98,7 @@ export function updateFile(db: Database, fp: string, log?: LogFn): boolean {
   dbInsertChunks(db, newChunks)
   dbInsertEdges(db, newEdges)
   dbSetFileHash(db, fp, h)
+  recordIndexEvent({ file: fp, ts: Date.now(), action: "change" })
   log?.("debug", "reindexed file", { file: fp, chunks: newChunks.length, edges: newEdges.length })
   return true
 }

@@ -11,7 +11,13 @@ const KEEP_RECENT_TURNS = parseInt(process.env.CONTEXT_MANAGER_COMPACT_KEEP || "
 interface ToolState { status: string; output?: string; title?: string; input?: Record<string, unknown>; time?: { compacted?: number } }
 interface ToolPart { type: string; tool?: string; state?: ToolState }
 interface AnyPart { type: string; text?: string; tool?: string; state?: ToolState }
-interface MsgEntry { info: { role?: string }; parts: AnyPart[] }
+interface MsgEntry { info: { role?: string; sessionID?: string }; parts: AnyPart[] }
+
+let compactionCount = 0
+
+export function getCompactionCount(): number {
+  return compactionCount
+}
 
 export function compactMessages(messages: MsgEntry[], fillRatio: number): number {
   if (fillRatio < FILL_THRESHOLD) return 0
@@ -48,6 +54,7 @@ export function compactMessages(messages: MsgEntry[], fillRatio: number): number
       compacted++
     }
   }
+  compactionCount += compacted
   return compacted
 }
 

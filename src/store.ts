@@ -234,3 +234,13 @@ export function dbTopFiles(db: Database, limit = 10): { file: string; n: number 
   ) as { file: string; n: number }[]
   return rows
 }
+
+// Files that are imported/extended/called by the most other files.
+export function dbFindLoadedFiles(db: Database, limit = 10): { file: string; n: number }[] {
+  const rows = queryAll(
+    db,
+    "SELECT target_file, count(DISTINCT source_file) as n FROM edges GROUP BY target_file ORDER BY n DESC LIMIT ?",
+    limit,
+  ) as { target_file: string; n: number }[]
+  return rows.map(({ target_file, n }) => ({ file: target_file, n }))
+}

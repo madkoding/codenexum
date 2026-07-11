@@ -81,6 +81,7 @@ When you detect the context is getting full:
 | `context_related file.ts:symbol [n]` | Show callers, callees, imports, extends, implements |
 | `context_impact ["file.ts"] [n]` | Files/symbols that depend on the given files |
 | `context_stats` | Show indexing statistics |
+| `context_dashboard` | Open the web dashboard (localhost only) |
 | `context_clear` | Clear the local index |
 
 ## Token Budget
@@ -92,12 +93,24 @@ When context is limited, allocate tokens roughly:
 
 ## Snippet-Only Mode
 
-Search results now include a body snippet and exact line range. **If the snippet is enough to answer the user's question, do not read the file.** This is the default mode and saves the most tokens.
+Search results now include a body snippet and exact line range. **If the snippet is enough to answer the user's question, do not open the file.** This is the default mode and saves the most tokens.
 
 When to open the file:
 - The snippet is truncated mid-block or mid-function.
 - You need to see surrounding definitions or multiple related symbols.
 - The user explicitly asks for the full file or line range beyond the snippet.
+
+## Dashboard
+
+Run `context_dashboard` to open a local web dashboard at `http://127.0.0.1:3567`. It shows:
+- Estimated tokens saved this session.
+- Searches, snippet-only answers, and files read.
+- Index status: chunks, files, edges, languages.
+- Context pressure bar.
+- Hot files with the most dependents.
+- Recent searches and recent index activity.
+
+The dashboard refreshes every 3 seconds and is **localhost-only**.
 
 ## Guiding the User
 

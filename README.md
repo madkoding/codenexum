@@ -212,15 +212,34 @@ The bundled skill teaches opencode to classify files into three tiers when conte
 
 Token budget: 50% active files / 30% dependency signatures / 20% search results + summaries.
 
+### 7. Web dashboard (localhost)
+
+Run `context_dashboard` to open a local web dashboard at `http://127.0.0.1:3567`. It visualizes what the plugin is doing in real time:
+
+| Section | What it shows |
+|---|---|
+| Hero metrics | Estimated tokens saved, searches, snippet-only answers, files read, compactations. |
+| Index status | Chunks, files, edges, languages, last indexed time. |
+| Context pressure | Fill ratio with a live progress bar. |
+| Hot files | Files with the most dependents — warns before editing. |
+| Project map | Top files by symbol count. |
+| Recent searches | Last 20 queries and whether they were answered from snippets. |
+| Recent index activity | Files re-indexed by auto-update. |
+
+The dashboard is **localhost-only** (127.0.0.1) and refreshes every 3 seconds.
+
 ## Tools
 
-The plugin adds 4 tools that the AI calls directly:
+The plugin adds 5 tools that the AI calls directly:
 
 | Tool | Arguments | What it does |
 |------|----------|-------------|
 | `context_analyze` | `path` (optional) | Re-indexes the project. Runs automatically on first load. Use manually to re-index or target a specific path. |
 | `context_search` | `query` (required), `n` (optional, default 10) | Searches the index via FTS5 + BM25. Returns `type name @ file:line` ranked by relevance, with substring matching. |
-| `context_stats` | — | Shows what's indexed: project root, timestamp, chunk counts by language, file count. |
+| `context_related` | `symbol` (required), `n` (optional) | Callers, callees, imports, extends, implements for a symbol. |
+| `context_impact` | `files` (required), `n` (optional) | Files/symbols that depend on the given files. |
+| `context_stats` | — | Shows what's indexed, context fill, searches, and estimated token savings. |
+| `context_dashboard` | — | Opens the local web dashboard. |
 | `context_clear` | — | Deletes the entire index. Use when switching projects or starting fresh. |
 
 ## Supported languages
@@ -249,6 +268,14 @@ src/
   store.ts                         # SQLite layer (FTS5, CRUD, search, BM25)
   indexer.ts                       # Filesystem walker, project indexer, incremental update
   prompt.ts                        # System prompt builder
+  budget.ts                        # Token usage tracking + savings estimation
+  compact.ts                       # History compaction
+  compress.ts                      # Tool output compression
+  dashboard.ts                     # Localhost web dashboard
+  edges.ts                         # Relationship extraction
+  resolve.ts                       # Symbol reference parser
+  search.ts                        # Filtered search
+  format.ts                        # Result formatting
   parsers/
     python.ts                      # pyParse
     javascript.ts                  # jsParse, tsParse
@@ -273,7 +300,7 @@ test/
   contracts.test.ts                # Interface/output format stability
 ```
 
-**143 tests, 0 failures.** Run them with `bun test`.
+**171+ tests, 0 failures.** Run them with `bun test`.
 
 The plugin is fully decoupled: parsers are pure functions, the SQLite layer accepts a `Database` instance as a parameter (no globals), and the indexer accepts a database + filesystem path. The entry point wires everything together with opencode's plugin API.
 
