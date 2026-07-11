@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite"
 import type { Chunk } from "./types"
+import type { Edge } from "./edges"
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface SearchResult {
   name: string
@@ -41,6 +42,15 @@ export function initSchema(db: Database): void {
   )`)
   db.exec("CREATE TABLE IF NOT EXISTS file_hashes (file TEXT PRIMARY KEY, hash TEXT)")
   db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+  db.exec(`CREATE TABLE IF NOT EXISTS edges (
+    source_file TEXT,
+    source_symbol TEXT,
+    target_file TEXT,
+    target_symbol TEXT,
+    kind TEXT
+  )`)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_file, target_symbol)")
+  db.exec("CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_file, source_symbol)")
 }
 
 const MAX_CONTENT = 200
@@ -149,6 +159,61 @@ export function dbClear(db: Database): void {
   db.exec("DELETE FROM chunks_fts")
   db.exec("DELETE FROM file_hashes")
   db.exec("DELETE FROM meta")
+  db.exec("DELETE FROM edges")
+}
+
+export function dbInsertEdges(db: Database, edges: Edge[]): void {
+  if (edges.length === 0) return
+  const tx = db.transaction(() => {
+    for (const e of edges) {
+      run(
+        db,
+        "INSERT INTO edges (source_file, source_symbol, target_file, target_symbol, kind) VALUES (?,?,?,?,?)",
+        e.sourceFile, e.sourceSymbol, e.targetFile, e.targetSymbol, e.kind,
+      )
+    }
+  })
+  tx()
+}
+
+export function dbDeleteEdgesForFile(db: Database, file: string): void {
+  run(db, "DELETE FROM edges WHERE source_file = ?", file)
+}
+
+export function dbFindRelated(
+  db: Database,
+  file: string,
+  symbol: string,
+): { kind: string; file: string; symbol: string; direction: "out" | "in" }[] {
+  const out = queryAll(db, "SELECT target_file, target_symbol, kind FROM edges WHERE source_file = ? AND source_symbol = ?", file, symbol) as { target_file: string; target_symbol: string; kind: string }[]
+  const inc = queryAll(db, "SELECT source_file, source_symbol, kind FROM edges WHERE target_file = ? AND target_symbol = ?", file, symbol) as { source_file: string; source_symbol: string; kind: string }[]
+  const results: { kind: string; file: string; symbol: string; direction: "out" | "in" }[] = []
+  for (const r of out) {
+    results.push({ kind: r.kind, file: r.target_file, symbol: r.target_symbol, direction: "out" })
+  }
+  for (const r of inc) {
+    results.push({ kind: r.kind, file: r.source_file, symbol: r.source_symbol, direction: "in" })
+  }
+  return results
+}
+
+export function dbFindImpacted(
+  db: Database,
+  files: string[],
+): { file: string; dependent: string; kind: string; symbol: string }[] {
+  const results: { file: string; dependent: string; kind: string; symbol: string }[] = []
+  for (const f of files) {
+    const rows = queryAll(db, "SELECT source_file, source_symbol, kind FROM edges WHERE target_file = ?", f) as { source_file: string; source_symbol: string; kind: string }[]
+    for (const r of rows) {
+      results.push({ file: f, dependent: r.source_file, kind: r.kind, symbol: r.source_symbol })
+    }
+  }
+  return results
+}
+
+export function dbEdgeCount(db: Database): number {
+  const row = queryOne(db, "SELECT count(*) as n FROM edges") as { n: number }
+  return row.n
 }
 
 export function dbStatsByLang(db: Database): { ext: string; n: number }[] {

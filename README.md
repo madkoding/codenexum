@@ -138,15 +138,18 @@ When opencode starts and no index exists, the plugin automatically walks your pr
 - Enums
 - Traits (Rust), modules (Ruby), namespaces (C++)
 
-Each symbol becomes a "chunk" stored in SQLite: `{ name, file, type, line, content }`. Auto-indexing runs in a background worker on first load and never blocks the TUI. The walk is capped at 10,000 files (override with `CONTEXT_MANAGER_MAX_FILES`). You can also trigger a manual re-index anytime with `context_analyze`, or index a specific path.
+Each symbol becomes a "chunk" stored in SQLite: `{ name, file, type, line, lineEnd, content, body, lang }`. Auto-indexing runs in a background worker on first load and never blocks the TUI. The walk is capped at 10,000 files (override with `CONTEXT_MANAGER_MAX_FILES`). You can also trigger a manual re-index anytime with `context_analyze`, or index a specific path.
+
+The indexer also builds a lightweight **1-level relationship graph**: imports, function calls, class extends, and interface implements. This enables `context_related` and `context_impact` without the weight of a full code graph.
 
 ### 2. Storage (SQLite FTS5)
 
-The index lives at `~/.cache/opencode/context-manager.sqlite`. Three tables:
+The index lives at `~/.cache/opencode/context-manager.sqlite`. Four tables:
 
-- **`chunks_fts`** — an FTS5 virtual table with a `trigram` tokenizer that enables substring matching. The columns `name` and `content` are full-text indexed; `id`, `file`, `type`, and `line` are stored but unindexed (metadata only).
+- **`chunks_fts`** — an FTS5 virtual table with a `trigram` tokenizer that enables substring matching. The columns `name` and `content` are full-text indexed; `id`, `file`, `type`, `line`, `lineEnd`, `body`, and `lang` are stored but unindexed (metadata only).
 - **`file_hashes`** — MD5 hashes per file, used to skip re-parsing when a file's content hasn't changed.
-- **`meta`** — key-value store for `projectRoot` and `indexedAt`.
+- **`meta`** — key-value store for `projectRoot`, `indexedAt`, and `schema_version`.
+- **`edges`** — lightweight 1-level relations: `import`, `call`, `extend`, `implement`.
 
 WAL mode is enabled for concurrent reads during writes. The database connection is opened once at plugin startup and reused for all queries.
 
@@ -160,6 +163,15 @@ When the AI calls `context_search "auth handler"`:
 4. Top N results are returned as `type name @ file:line`
 
 The `trigram` tokenizer is the key to why this works better than `grep`: it breaks text into 3-character sequences, so `"invoice"` matches inside `"createInvoice"`, and `"websocket"` matches inside `"WebSocketHandler"`. `grep` can only match literal strings.
+
+### 3b. Related symbols and impact
+
+Two extra tools leverage the 1-level relation graph:
+
+- `context_related src/auth.ts:authenticate` — shows callers, callees, imports, extends, and implements for that symbol.
+- `context_impact ["src/auth.ts"]` — shows files/symbols that depend on the given files, useful before making a change.
+
+These are **heuristic, not a full code graph** (that would require tree-sitter). They are accurate for direct local imports and explicit function calls, which covers the most common agent questions.
 
 ### 4. Auto-update (incremental)
 

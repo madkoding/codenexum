@@ -5,11 +5,13 @@ import { existsSync, mkdirSync, unlinkSync, copyFileSync, writeFileSync, readFil
 import {
   initSchema, dbInsertChunks, dbDeleteFile, dbSetFileHash, dbSetMeta,
   dbGetMeta, dbChunkCount, dbFileCount, dbClear, dbStatsByLang, dbTopFiles,
-  dbGetSchemaVersion, dbSetSchemaVersion, SCHEMA_VERSION,
+  dbGetSchemaVersion, dbSetSchemaVersion, SCHEMA_VERSION, dbInsertEdges,
+  dbFindRelated, dbFindImpacted, dbEdgeCount,
 } from "../src/store"
 import { search } from "../src/search"
 import { formatSearchResults } from "../src/format"
 import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn } from "../src/indexer"
+import { parseSymbolRef } from "../src/resolve"
 import { buildSystemPrompt } from "../src/prompt"
 import { compressToolOutput } from "../src/compress"
 import { recordTokens, getFillRatio, clearSession } from "../src/budget"
@@ -302,10 +304,10 @@ const _plugin: Plugin = async ({ client, directory }) => {
         try {
           const worker = new Worker(workerPath, { type: "module" })
           worker.postMessage({ root: directory, maxFiles })
-          worker.onmessage = (e: MessageEvent<{ files: number; chunks: any[]; fileHashes: Record<string, string>; capped: boolean }>) => {
+          worker.onmessage = (e: MessageEvent<{ files: number; chunks: any[]; fileHashes: Record<string, string>; edges: any[]; capped: boolean }>) => {
             try {
               if (!db) return
-              const { files, chunks, fileHashes, capped } = e.data
+              const { files, chunks, fileHashes, edges, capped } = e.data
               if (chunks.length === 0) {
                 toast("Context Manager", "No code files found in this directory", "warning", 10000)
               } else if (capped) {
@@ -314,10 +316,11 @@ const _plugin: Plugin = async ({ client, directory }) => {
                 toast("Index ready", `Indexed ${chunks.length} chunks from ${files} files`, "success", 8000)
               }
               dbInsertChunks(db, chunks)
+              dbInsertEdges(db, edges || [])
               for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
               dbSetMeta(db, "projectRoot", directory)
               dbSetMeta(db, "indexedAt", new Date().toISOString())
-              log("info", "auto-indexed project", { files, chunks: chunks.length, capped })
+              log("info", "auto-indexed project", { files, chunks: chunks.length, edges: (edges || []).length, capped })
               ready = true
               worker.terminate()
             } catch (err) {
@@ -358,13 +361,14 @@ const _plugin: Plugin = async ({ client, directory }) => {
         async execute(args, c) {
           if (!state.db) return "Plugin still initializing. Try again in a second."
           const root = args.path ? (isAbsolute(args.path) ? args.path : join(c.directory, args.path)) : c.directory
-          const { files, chunks, fileHashes, capped } = indexProject(root)
+          const { files, chunks, fileHashes, edges, capped } = indexProject(root)
           dbClear(state.db)
           dbInsertChunks(state.db, chunks)
+          dbInsertEdges(state.db, edges)
           for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(state.db, fp, h)
           dbSetMeta(state.db, "projectRoot", root)
           dbSetMeta(state.db, "indexedAt", new Date().toISOString())
-          log("info", "indexed project", { files, chunks: chunks.length, root, capped })
+          log("info", "indexed project", { files, chunks: chunks.length, edges: edges.length, root, capped })
           if (capped) {
             toast("Index capped", `Indexed ${chunks.length} chunks (hit cap at ${files} files). Pass a narrower path.`, "warning", 15000)
           } else {
@@ -399,6 +403,7 @@ const _plugin: Plugin = async ({ client, directory }) => {
             `  config:     ${cfg}`,
             `  tables:     ${tbl}`,
             `  headings:   ${hdg}`,
+            `  edges:      ${dbEdgeCount(state.db)}`,
             `  DB: ${dbPath}`,
           ].filter(Boolean).join("\n")
         },
@@ -447,6 +452,55 @@ const _plugin: Plugin = async ({ client, directory }) => {
           lines.push(`Files:   ${dbFileCount(state.db)}`)
           lines.push(`Context fill: ${(fill * 100).toFixed(0)}%`)
           return lines.join("\n")
+        },
+      }),
+      context_related: tool({
+        description: "Show symbols related to a given file:symbol — callers, callees, imports, extends, implements. Useful for tracing a change.",
+        args: {
+          symbol: tool.schema.string().describe("Symbol to trace, e.g. 'src/auth.ts:authenticate' or just 'authenticate' (best-effort match)."),
+          n: tool.schema.number().optional().default(10).describe("Max related symbols to return."),
+        },
+        async execute(args) {
+          const db = state.db
+          if (!db) return "Plugin still initializing. Try again in a second."
+          if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
+          const projectRoot = dbGetMeta(db, "projectRoot") || ""
+          const parsed = parseSymbolRef(args.symbol, projectRoot)
+          if (!parsed) return "Could not parse symbol reference. Use format: file.ts:symbolName."
+          const related = dbFindRelated(db, parsed.file, parsed.name)
+          if (!related.length) return `No relations found for ${parsed.name}.`
+          const limit = args.n || 10
+          return related.slice(0, limit).map(r => {
+            const rel = relative(projectRoot, r.file) || r.file
+            const arrow = r.direction === "out" ? "→" : "←"
+            return `${r.kind} ${arrow} ${r.symbol} @ ${rel}`
+          }).join("\n")
+        },
+      }),
+      context_impact: tool({
+        description: "Given one or more files, find files/symbols that depend on them. Useful before editing to know what could break.",
+        args: {
+          files: tool.schema.array(tool.schema.string()).describe("File paths (absolute or relative to project root)."),
+          n: tool.schema.number().optional().default(10).describe("Max impacted files to return."),
+        },
+        async execute(args, c) {
+          const db = state.db
+          if (!db) return "Plugin still initializing. Try again in a second."
+          if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
+          const projectRoot = dbGetMeta(db, "projectRoot") || c.directory
+          const files = args.files.map(f => isAbsolute(f) ? f : join(projectRoot, f))
+          const impacted = dbFindImpacted(db, files)
+          if (!impacted.length) return "No dependent files found for the given files."
+          const limit = args.n || 10
+          const projectRootMeta = dbGetMeta(db, "projectRoot") || ""
+          const grouped: Record<string, string[]> = {}
+          for (const r of impacted.slice(0, limit)) {
+            const dep = relative(projectRootMeta, r.dependent) || r.dependent
+            ;(grouped[dep] ||= []).push(`${r.kind} ${r.symbol}`)
+          }
+          return Object.entries(grouped).map(([file, symbols]) => {
+            return `${file}\n  ${symbols.join("\n  ")}`
+          }).join("\n\n")
         },
       }),
       context_clear: tool({

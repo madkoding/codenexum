@@ -3,9 +3,11 @@ import { join, extname } from "path"
 import { createHash } from "crypto"
 import type { Database } from "bun:sqlite"
 import type { Chunk } from "./types"
+import type { Edge } from "./edges"
 import { IGNORE, CODE_EXTS } from "./types"
 import { PARSERS } from "./parsers"
-import { dbInsertChunks, dbDeleteFile, dbGetFileHash, dbSetFileHash } from "./store"
+import { dbInsertChunks, dbDeleteFile, dbGetFileHash, dbSetFileHash, dbInsertEdges, dbDeleteEdgesForFile } from "./store"
+import { extractEdges } from "./edges"
 
 function hash(s: string): string {
   return createHash("md5").update(s).digest("hex")
@@ -45,7 +47,7 @@ export function parseFile(fp: string): Chunk[] {
   return p(readFileSync(fp, "utf-8"), fp)
 }
 
-export function indexProject(root: string, maxFiles = getMaxFiles()): { files: number; chunks: Chunk[]; fileHashes: Record<string, string>; capped: boolean } {
+export function indexProject(root: string, maxFiles = getMaxFiles()): { files: number; chunks: Chunk[]; fileHashes: Record<string, string>; edges: Edge[]; capped: boolean } {
   const files = walk(root, new Set(), maxFiles)
   const capped = files.length >= maxFiles
   const chunks: Chunk[] = []
@@ -59,7 +61,8 @@ export function indexProject(root: string, maxFiles = getMaxFiles()): { files: n
       if (p) chunks.push(...p(content, fp))
     } catch {}
   }
-  return { files: files.length, chunks, fileHashes, capped }
+  const edges = extractEdges(chunks)
+  return { files: files.length, chunks, fileHashes, edges, capped }
 }
 
 export type LogFn = (level: string, msg: string, extra?: Record<string, unknown>) => void
@@ -75,10 +78,13 @@ export function updateFile(db: Database, fp: string, log?: LogFn): boolean {
   const h = hash(content)
   if (dbGetFileHash(db, fp) === h) return false
   dbDeleteFile(db, fp)
+  dbDeleteEdgesForFile(db, fp)
   const newChunks = parseFile(fp)
+  const newEdges = extractEdges(newChunks)
   dbInsertChunks(db, newChunks)
+  dbInsertEdges(db, newEdges)
   dbSetFileHash(db, fp, h)
-  log?.("debug", "reindexed file", { file: fp, chunks: newChunks.length })
+  log?.("debug", "reindexed file", { file: fp, chunks: newChunks.length, edges: newEdges.length })
   return true
 }
 

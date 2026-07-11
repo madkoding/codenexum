@@ -25,6 +25,26 @@ You can narrow results with prefixes:
 
 Filters can be combined with free text: `function:auth file:src`.
 
+## Relationship Graph (1-level)
+
+The index also records lightweight relationships between symbols: imports, calls, extends, and implements. These are **heuristic, one-level links** — good for tracing a change, not a full code graph.
+
+Use them when the user asks:
+- "What uses this function?"
+- "If I change X, what breaks?"
+- "Where is this class extended?"
+
+| Tool | Description |
+|---|---|
+| `context_related file.ts:symbolName [n]` | Callers, callees, imports, extends, implements |
+| `context_impact ["file1.ts", "file2.ts"] [n]` | Files/symbols that depend on the given files |
+
+### Example flow
+
+1. `context_search "authenticate"` → `function authenticate @ src/auth.ts:4-7`
+2. `context_related "src/auth.ts:authenticate"` → sees callers like `login`, `refresh`.
+3. `context_impact ["src/auth.ts"]` → sees tests and modules that import `src/auth.ts`.
+
 ### Example flow
 
 1. `context_search "auth handler"` → returns something like:
@@ -58,6 +78,8 @@ When you detect the context is getting full:
 |---|---|
 | `context_analyze [path]` | Index a project (run once on first use, then auto-updates) |
 | `context_search <query> [n] [snippet=N]` | Search indexed code by keyword/phrase — **prefer this before reading files** |
+| `context_related file.ts:symbol [n]` | Show callers, callees, imports, extends, implements |
+| `context_impact ["file.ts"] [n]` | Files/symbols that depend on the given files |
 | `context_stats` | Show indexing statistics |
 | `context_clear` | Clear the local index |
 

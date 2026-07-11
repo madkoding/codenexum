@@ -46,15 +46,15 @@ export function jsParse(c: string, f: string): Chunk[] {
   while ((m = mt.exec(c)) !== null)
     r.push(makeRegexChunk({ id: `${f}:fn:${m[1]}`, file: f, name: m[1], type: "function", line: lineOf(c, m.index), content: `method ${m[1]}(${m[2]})` }, lines, f))
 
-  const im1 = /(?:^|\n)\s*import\s+(\w+)\s+from\s+['"][^'"]+['"]/g
+  const im1 = /(?:^|\n)\s*import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g
   while ((m = im1.exec(c)) !== null)
     r.push(makeChunk({ id: `${f}:imp:${m[1]}`, file: f, name: m[1], type: "import", line: lineOf(c, m.index), content: m[0].trim() }, f))
 
-  const im2 = /(?:^|\n)\s*import\s+\{\s*(\w+)/g
+  const im2 = /(?:^|\n)\s*import\s+\{\s*(\w+)[^}]*\}\s+from\s+['"]([^'"]+)['"]/g
   while ((m = im2.exec(c)) !== null)
     r.push(makeChunk({ id: `${f}:imp:${m[1]}`, file: f, name: m[1], type: "import", line: lineOf(c, m.index), content: m[0].trim() }, f))
 
-  const im3 = /(?:^|\n)\s*import\s+\*\s+as\s+(\w+)\s+from\s+['"][^'"]+['"]/g
+  const im3 = /(?:^|\n)\s*import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g
   while ((m = im3.exec(c)) !== null)
     r.push(makeChunk({ id: `${f}:imp:${m[1]}`, file: f, name: m[1], type: "import", line: lineOf(c, m.index), content: m[0].trim() }, f))
 
@@ -62,7 +62,7 @@ export function jsParse(c: string, f: string): Chunk[] {
   while ((m = im4.exec(c)) !== null)
     r.push(makeChunk({ id: `${f}:imp:${m[1]}`, file: f, name: m[1], type: "import", line: lineOf(c, m.index), content: m[0].trim() }, f))
 
-  const im5 = /(?:^|\n)\s*(?:const|let|var)\s+(\w+)\s*=\s*require\s*\(['"][^'"]+['"]\)/g
+  const im5 = /(?:^|\n)\s*(?:const|let|var)\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
   while ((m = im5.exec(c)) !== null)
     r.push(makeChunk({ id: `${f}:imp:${m[1]}`, file: f, name: m[1], type: "import", line: lineOf(c, m.index), content: m[0].trim() }, f))
 

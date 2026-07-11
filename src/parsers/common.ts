@@ -36,6 +36,9 @@ export function findBlockEndByBrace(lines: string[], startLine: number): number 
   let escaped = false
   let started = false
   for (let i = startLine; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    // Skip import/export brace-only lines so they don't skew block depth.
+    if (/^(import|export)\s*\{/.test(trimmed)) continue
     for (const ch of lines[i]) {
       if (escaped) {
         escaped = false
