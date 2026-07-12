@@ -48,10 +48,10 @@ The plugin adds a fixed prompt overhead: **+314 tokens/turn** (the system prompt
 
 ## Install
 
-Add the package to your opencode config:
+Install via the opencode plugin script:
 
-```json
-{ "plugin": ["@madtech/opencode-context-manager-plugin"] }
+```bash
+opencode plugin add @madtech/opencode-context-manager-plugin
 ```
 
 Restart opencode. The plugin auto-indexes your project, copies its skill, and is ready. No manual setup.
