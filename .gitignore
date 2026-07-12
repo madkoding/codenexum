@@ -3,5 +3,6 @@ node_modules/
 .idea/
 *.log
 *.tgz
+.opencode/
 dashboard/node_modules/
 dashboard/dist/
