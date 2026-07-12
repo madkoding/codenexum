@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite"
 import { Database as SqliteDatabase } from "bun:sqlite"
-import { dbChunkCount, dbFileCount, dbGetMeta, dbStatsByLang, dbTopFiles, dbFindLoadedFiles, dbEdgeCount, dbSearch, initSchema } from "./store"
+import { dbChunkCount, dbFileCount, dbGetMeta, dbStatsByLang, dbTopFiles, dbFindLoadedFiles, dbEdgeCount, initSchema } from "./store"
 import { getUsage, measuredSavings, getGlobalUsage } from "./budget"
 import { getCompactionCount } from "./compact"
 import { getRecentIndexEvents } from "./indexer"
@@ -10,6 +10,7 @@ import {
 } from "./registry"
 import { getFillRatio } from "./budget"
 import { existsSync } from "fs"
+import { join } from "path"
 
 export const DEFAULT_DASHBOARD_PORT = parseInt(process.env.CONTEXT_MANAGER_DASHBOARD_PORT || "3567", 10)
 
@@ -137,13 +138,28 @@ function handleRequest(req: Request, srv: any): Response {
       return json(statsApi(db, projMatch[1]))
     }
 
-    const searchMatch = path.match(/^\/api\/project\/([a-f0-9]+)\/search$/)
-    if (searchMatch) {
-      const db = ensureProjectDb(searchMatch[1])
-      if (!db) return json({ error: "project not found" }, 404)
-      const q = url.searchParams.get("q") || ""
-      const n = parseInt(url.searchParams.get("n") || "10", 10)
-      return json({ results: dbSearch(db, q, n).map(r => ({ name: r.name, type: r.type, file: r.file, line: r.line, lineEnd: r.lineEnd })) })
+    // Static file serving for dashboard SPA
+    const distDir = join(import.meta.dir, "..", "dashboard", "dist")
+    if (existsSync(distDir)) {
+      const filePath = join(distDir, path === "/" ? "index.html" : path.slice(1))
+      if (existsSync(filePath)) {
+        const ext = filePath.split(".").pop() || ""
+        const mime: Record<string, string> = {
+          html: "text/html", js: "application/javascript", css: "text/css",
+          json: "application/json", png: "image/png", jpg: "image/jpeg",
+          svg: "image/svg+xml", ico: "image/x-icon", map: "application/json",
+        }
+        const body = Bun.file(filePath)
+        return new Response(body, { headers: { "Content-Type": mime[ext] || "application/octet-stream" } })
+      }
+      // SPA fallback: serve index.html for unknown routes
+      const indexFile = join(distDir, "index.html")
+      if (existsSync(indexFile)) {
+        const body = Bun.file(indexFile)
+        return new Response(body, { headers: { "Content-Type": "text/html" } })
+      }
+    } else {
+      console.warn("[context-manager dashboard] dashboard/dist/ not found — run 'bun run dashboard:build'")
     }
 
     return new Response("Not found", { status: 404 })
@@ -176,11 +192,6 @@ function handleWsMessage(ws: any, msg: any) {
       ws.send(JSON.stringify({ type: "data_changed" }))
     } else if (data.type === "unsubscribe") {
       client.channels.delete(data.channel)
-    } else if (data.type === "search") {
-      const db = ensureProjectDb(data.projectId)
-      if (!db) { ws.send(JSON.stringify({ type: "search:results", data: [] })); return }
-      const results = dbSearch(db, data.query || "", data.n || 10)
-      ws.send(JSON.stringify({ type: "search:results", data: results.map(r => ({ name: r.name, type: r.type, file: r.file, line: r.line, lineEnd: r.lineEnd })) }))
     }
   } catch (e) {
     console.error("[context-manager dashboard] WebSocket message error:", e)

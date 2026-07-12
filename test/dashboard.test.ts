@@ -100,17 +100,4 @@ test("dashboard /api/project/:id/stats returns stats", async () => {
   stopDashboard()
 })
 
-test("dashboard /api/project/:id/search returns results", async () => {
-  const db = makeDb()
-  const id = getProjId()
-  registerProjectDb(id, db)
-  registerProject(TEST_DIR)
-  const state = await startDashboard(db)
-  const res = await fetch(`${state.url}/api/project/${id}/search?q=foo&n=5`)
-  expect(res.status).toBe(200)
-  const data = await res.json()
-  expect(data.results).toBeDefined()
-  expect(data.results.length).toBeGreaterThan(0)
-  expect(data.results[0].name).toBe("foo")
-  stopDashboard()
-})
+// search endpoint removed — dashboard dist is served statically

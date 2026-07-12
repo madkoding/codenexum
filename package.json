@@ -12,12 +12,15 @@
     "plugins/",
     "src/",
     "skills/",
-    "scripts/"
+    "dashboard/dist/"
   ],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "postinstall": "bash scripts/postinstall.sh"
+    "dashboard:dev": "cd dashboard && bun run dev",
+    "dashboard:build": "cd dashboard && bun install && bun run build",
+    "prepublishOnly": "bun run dashboard:build",
+    "test:pack": "bash scripts/test-pack.sh"
   },
   "engines": {
     "opencode": ">=1.0.0"

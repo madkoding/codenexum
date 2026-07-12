@@ -399,37 +399,28 @@ test("C10c: bundled SKILL.md exists at skills/context-manager/SKILL.md", async (
 })
 
 // ═══════════════════════════════════════════════════════════════
-// C10d: Loading shim — lightweight proxy that installs/loads the
-// real plugin in background without blocking opencode's TUI
+// C10d: Entry point — smart loader that installs from repo or
+// loads directly from npm package, without blocking opencode's TUI
 // ═══════════════════════════════════════════════════════════════
-test("C10d: loading shim exists and exports a Plugin function", async () => {
-  const shim = Bun.file("./plugins/context-manager-loading-shim.ts")
-  expect(await shim.exists()).toBe(true)
-  const src = await shim.text()
-  expect(src).toContain("export default LoadingShim")
-  expect(src).toContain("const LoadingShim: Plugin =")
-  expect(src).toContain("Checking installation")
-  expect(src).toContain("showToast")
-})
-
-// ═══════════════════════════════════════════════════════════════
-// C10d2: shim is self-aware — installs from local repo and can
-// fall back to npm version checking
-// ═══════════════════════════════════════════════════════════════
-test("C10d2: shim checks repo and npm for updates", async () => {
-  const src = await Bun.file("./plugins/context-manager-loading-shim.ts").text()
+test("C10d: entry point exists and exports a Plugin function", async () => {
+  const ep = Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts")
+  expect(await ep.exists()).toBe(true)
+  const src = await ep.text()
+  expect(src).toContain("export default plugin")
+  expect(src).toContain("const plugin: Plugin =")
   expect(src).toContain("findRepoDir")
-  expect(src).toContain("NPM_REGISTRY")
-  expect(src).toContain("copyDir")
+  expect(src).toContain("ensureSkill")
+  expect(src).toContain("setImmediate")
 })
 
 // ═══════════════════════════════════════════════════════════════
-// C10e: Plugin real — loader mínimo que re-exporta la lógica
+// C10d2: entry point handles both dev repo and npm installation
 // ═══════════════════════════════════════════════════════════════
-test("C10e: real plugin is a minimal loader that re-exports ContextManagerPlugin", async () => {
+test("C10d2: entry point finds repo and loads from it", async () => {
   const src = await Bun.file("./plugins/@madtech-opencode-context-manager-plugin.ts").text()
-  expect(src).toContain("import ContextManagerPlugin from")
-  expect(src).toContain("export default")
+  expect(src).toContain("findRepoDir")
+  expect(src).toContain("import(join(repoDir")
+  expect(src).toContain("import(\"../src/plugin\")")
 })
 
 // ═══════════════════════════════════════════════════════════════
@@ -451,64 +442,14 @@ test("C10e2: implementation lives in src/plugin.ts", async () => {
 // ═══════════════════════════════════════════════════════════════
 test("C10f: package.json declares postinstall that copies the shim", async () => {
   const pkg = await Bun.file("./package.json").json()
-  expect(pkg.scripts.postinstall).toBe("bash scripts/postinstall.sh")
-  expect(pkg.files).toContain("scripts/")
-  const shim = Bun.file("./scripts/postinstall.sh")
-  expect(await shim.exists()).toBe(true)
-  const src = await shim.text()
-  expect(src).toContain("context-manager-loading-shim.ts")
-  expect(src).toContain("cmp -s")
+  expect(pkg.scripts).not.toHaveProperty("postinstall")
+  expect(pkg.files).not.toContain("scripts/")
+  expect(pkg.files).toContain("plugins/")
+  expect(pkg.files).toContain("src/")
+  expect(pkg.files).toContain("dashboard/dist/")
 })
 
-// ═══════════════════════════════════════════════════════════════
-// C10g: postinstall handles upgrades — if the shim content
-// changes between versions, the new content overwrites the old
-// ═══════════════════════════════════════════════════════════════
-test("C10g: postinstall overwrites the shim when content differs", async () => {
-  const tmp = await import("os").then(os => os.tmpdir())
-  const id = Date.now()
-  const fakeHome = `${tmp}/fake-home-${id}`
-  const fakePlugins = `${fakeHome}/.config/opencode/plugins`
-  const fakeDst = `${fakePlugins}/context-manager-loading-shim.ts`
-
-  // Set up a fake home with a stale shim
-  await Bun.$`mkdir -p ${fakePlugins}`.quiet()
-  await Bun.write(fakeDst, "// stale version 0")
-
-  // Stage a fake package layout with a newer shim
-  const fakePkg = `${tmp}/fake-pkg-${id}`
-  await Bun.$`mkdir -p ${fakePkg}/plugins ${fakePkg}/scripts`.quiet()
-  await Bun.write(`${fakePkg}/plugins/context-manager-loading-shim.ts`, "// fresh version 1")
-  await Bun.write(`${fakePkg}/scripts/postinstall.sh`, await Bun.file("./scripts/postinstall.sh").text())
-
-  // Run the postinstall script with HOME pointing to our fake home
-  const proc = Bun.spawn({
-    cmd: ["bash", `${fakePkg}/scripts/postinstall.sh`],
-    env: { ...process.env, HOME: fakeHome },
-    cwd: fakePkg,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  await proc.exited
-
-  const updated = await Bun.file(fakeDst).text()
-  expect(updated).toBe("// fresh version 1")
-
-  // Running again should be a no-op (idempotent)
-  const proc2 = Bun.spawn({
-    cmd: ["bash", `${fakePkg}/scripts/postinstall.sh`],
-    env: { ...process.env, HOME: fakeHome },
-    cwd: fakePkg,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  await proc2.exited
-  const stillSame = await Bun.file(fakeDst).text()
-  expect(stillSame).toBe("// fresh version 1")
-
-  // Cleanup
-  await Bun.$`rm -rf ${fakeHome} ${fakePkg}`.quiet()
-})
+// C10g removed — postinstall no longer needed
 
 // ═══════════════════════════════════════════════════════════════
 // C11: Tool names contract — the LLM calls these by exact name
@@ -540,11 +481,11 @@ test("C12: context_analyze has optional 'path' arg", async () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
-// C13: Hook names contract — opencode calls these hooks by name
+// C10e: Implementation lives in src/plugin.ts
 // ═══════════════════════════════════════════════════════════════
-test("C13: plugin registers 'event' hook", async () => {
+test("C10e: implementation lives in src/plugin.ts", async () => {
   const src = await Bun.file("./src/plugin.ts").text()
-  expect(src).toContain("async event(")
+  expect(src).toContain("ContextManagerPlugin")
 })
 
 test("C13: plugin registers 'experimental.chat.system.transform' hook", async () => {
