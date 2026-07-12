@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite"
 import { isAbsolute, relative, resolve } from "path"
-import { statSync } from "fs"
-import { dbGetChunksForFile, dbFindFilesByPattern, dbSearch, type SearchResult } from "./store"
+import { statSync, readFileSync } from "fs"
+import { createHash } from "crypto"
+import { dbGetChunksForFile, dbFindFilesByPattern, dbSearch, dbGetFileHash, type SearchResult } from "./store"
 import { formatSearchResults } from "./format"
 import { charsToTokens } from "./tokens"
 import type { ConversationContext } from "./context"
@@ -48,7 +49,8 @@ const DEFAULT_OPTIONS: InterceptOptions = {
 const COMPLEX_BASH_RE = /[|&;\n`$(){}[\]<>!]|<<|\>\>|\$\(|` | \)|\{|\}|&&|\|\||;/
 
 const READ_COMMANDS = new Set(["cat", "head", "tail", "less", "more", "bat"])
-const SEARCH_COMMANDS = new Set(["grep", "rg", "find", "fd", "git"])
+const SEARCH_COMMANDS = new Set(["grep", "rg", "fd"])
+const MUTATING_COMMANDS = new Set(["commit", "push", "reset", "checkout", "merge", "rebase", "add", "rm", "mv", "branch", "tag", "stash", "cherry-pick", "revert"])
 
 function resolveProjectPath(projectRoot: string, filePath: string): string | undefined {
   if (!filePath) return undefined
@@ -114,13 +116,14 @@ export function detectInterceptCandidate(
 
   // grep / glob.
   if ((tool === "grep" || tool === "glob") && pattern) {
+    // grep is high-confidence text search, so only warn to avoid hiding exact-match evidence.
     return {
       tool: tool === "glob" ? "glob" : "grep",
       originalTool: tool,
       args: a,
       query: pattern,
       reason: `${tool} with pattern "${pattern}"`,
-      substitutable: options.mode === "substitute",
+      substitutable: false,
     }
   }
 
@@ -147,7 +150,7 @@ export function detectInterceptCandidate(
       }
     }
 
-    // grep/rg/find/fd/git grep term [path]
+    // grep/rg/fd term [path]
     if (SEARCH_COMMANDS.has(base)) {
       const { query, path } = parseSearchCommand(tokens, projectRoot)
       if (query) {
@@ -161,6 +164,28 @@ export function detectInterceptCandidate(
           substitutable: options.mode === "substitute",
         }
       }
+    }
+
+    // git grep term [path] — only git grep, not git status/log/diff/commit etc.
+    if (base === "git" && tokens.length >= 3 && tokens[1] === "grep") {
+      const subTokens = ["git", ...tokens.slice(2)]
+      const { query, path } = parseSearchCommand(subTokens, projectRoot)
+      if (query) {
+        return {
+          tool: "bash-grep",
+          originalTool: tool,
+          args: a,
+          query,
+          resolvedPath: path,
+          reason: `bash git grep searching "${query}"`,
+          substitutable: options.mode === "substitute",
+        }
+      }
+    }
+
+    // Reject mutating git commands so their output is never replaced.
+    if (base === "git" && tokens.length >= 2 && MUTATING_COMMANDS.has(tokens[1])) {
+      return undefined
     }
   }
 
@@ -191,7 +216,7 @@ function parseSearchCommand(tokens: string[], projectRoot: string): { query?: st
     const t = tokens[i]
     if (t.startsWith("-")) {
       // Skip flag and its argument for flags that take one.
-      if (["-e", "-f", "-C", "-A", "-B"].includes(t)) {
+      if (["-e", "-f", "-C", "-A", "-B", "-t", "-g", "-m", "--type", "--glob", "--max-count", "--context", "--after-context", "--before-context", "--file", "--regexp"].includes(t)) {
         i++
       }
       continue
@@ -211,6 +236,14 @@ function stripQuotes(s: string): string {
     return s.slice(1, -1)
   }
   return s
+}
+
+function fileHash(filePath: string): string | null {
+  try {
+    return createHash("sha256").update(readFileSync(filePath)).digest("hex")
+  } catch {
+    return null
+  }
 }
 
 function filterChunksByOffset(
@@ -236,31 +269,45 @@ function stripComments(body: string, lang: string): string {
   const blockStart = lang === "py" ? '"""' : "/*"
   const blockEnd = lang === "py" ? '"""' : "*/"
   for (const line of lines) {
-    const trimmed = line.trim()
-    if (inBlock) {
-      if (trimmed.includes(blockEnd)) inBlock = false
-      continue
-    }
-    if (trimmed.startsWith(blockStart)) {
-      if (!trimmed.includes(blockEnd) || trimmed.indexOf(blockStart) >= trimmed.indexOf(blockEnd)) {
-        inBlock = !trimmed.includes(blockEnd)
+    let inString: string | null = null
+    let escaped = false
+    let code = ""
+    let inLineComment = false
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      const next = line[i + 1]
+      if (inLineComment) continue
+      if (inBlock) {
+        if (lang !== "py" && ch === "*" && next === "/") { inBlock = false; i++; }
+        else if (lang === "py" && ch === '"' && next === '"' && line[i + 2] === '"') { inBlock = false; i += 2; }
         continue
       }
-    }
-    // Single-line comments for common languages.
-    let code = line
-    if (["py", "rb", "sh", "yml", "yaml"].includes(lang)) {
-      const idx = code.indexOf("#")
-      if (idx >= 0) code = code.slice(0, idx)
-    } else {
-      const idx = code.indexOf("//")
-      if (idx >= 0) code = code.slice(0, idx)
+      if (escaped) { escaped = false; code += ch; continue }
+      if (ch === "\\") { escaped = true; code += ch; continue }
+      if (inString) {
+        if (ch === inString) inString = null
+        code += ch
+        continue
+      }
+      if ((ch === '"' || ch === "'" || ch === "`") && !inBlock) {
+        inString = ch
+        code += ch
+        continue
+      }
+      // Single-line comments for common languages.
+      if (["py", "rb", "sh", "yml", "yaml"].includes(lang) && ch === "#") { inLineComment = true; continue }
+      if (ch === "/" && next === "/") { inLineComment = true; i++; continue }
+      // Block comments
+      if (ch === "/" && next === "*") { inBlock = true; i++; continue }
+      if (lang === "py" && ch === '"' && next === '"' && line[i + 2] === '"') { inBlock = true; i += 2; continue }
+      code += ch
     }
     if (code.trim().length > 0 || line.trim().length === 0) {
       out.push(code)
     }
   }
-  return out.join("\n")
+  // If block comment wasn't closed, don't return mangled output; keep original.
+  return inBlock ? body : out.join("\n")
 }
 
 function rankChunksByRelevance(chunks: SearchResult[], terms: string[]): SearchResult[] {
@@ -332,6 +379,15 @@ function buildSearchSubstitute(
   }
   if (results.length === 0) return undefined
 
+  // Freshness check: skip substitution if any result file has changed on disk.
+  for (const r of results) {
+    const diskHash = fileHash(r.file)
+    const indexedHash = dbGetFileHash(db, r.file)
+    if (diskHash && indexedHash && diskHash !== indexedHash) {
+      return undefined
+    }
+  }
+
   const formatted = formatSearchResults(results, projectRoot, { compact: true, snippetLines: 8 })
   const output = [
     `// index search: "${query}"`,
@@ -350,6 +406,15 @@ function buildGlobSubstitute(
 ): { output: string; originalChars: number; savedChars: number } | undefined {
   const files = dbFindFilesByPattern(db, pattern)
   if (files.length === 0) return undefined
+
+  // Freshness check: skip substitution if any matching file has changed on disk.
+  for (const f of files) {
+    const diskHash = fileHash(f)
+    const indexedHash = dbGetFileHash(db, f)
+    if (diskHash && indexedHash && diskHash !== indexedHash) {
+      return undefined
+    }
+  }
 
   const relFiles = files.map(f => relativeForDisplay(projectRoot, f))
   const output = [
@@ -379,10 +444,17 @@ export function tryInterceptOutput(
 
   const nativeOutputChars = nativeOutput.length
   if ((candidate.tool === "read" || candidate.tool === "bash-read") && candidate.resolvedPath) {
+    // Freshness check: skip substitution if the file on disk differs from the index.
+    // Only applies when both hashes are available (indexed file).
+    const diskHash = fileHash(candidate.resolvedPath)
+    const indexedHash = dbGetFileHash(db, candidate.resolvedPath)
+    if (diskHash && indexedHash && diskHash !== indexedHash) {
+      return { replaced: false, reason: "file changed since index; skipping stale substitute", potentialSavings: 0 }
+    }
     const offset = candidate.args.offset
     const limit = candidate.args.limit
     substitute = buildFileSubstitute(db, projectRoot, candidate.resolvedPath, nativeOutputChars, offset, limit, conversationContext)
-  } else if ((candidate.tool === "grep" || candidate.tool === "bash-grep") && candidate.query) {
+  } else if (candidate.tool === "bash-grep" && candidate.query) {
     substitute = buildSearchSubstitute(db, projectRoot, candidate.query, nativeOutputChars, candidate.resolvedPath)
   } else if (candidate.tool === "glob" && candidate.query) {
     substitute = buildGlobSubstitute(db, projectRoot, candidate.query, nativeOutputChars)

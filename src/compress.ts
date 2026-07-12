@@ -34,22 +34,30 @@ function getMaxLines(toolID: string): number {
   return DEFAULT_MAX_LINES[toolID] ?? 50
 }
 
-function semanticCompress(output: string, toolID: string): string | undefined {
+function semanticCompress(output: string, toolID: string, cmd?: string): string | undefined {
   if (process.env.CONTEXT_MANAGER_SEMANTIC_COMPRESS === "0") return undefined
+
+  // Only apply semantic compression to bash outputs from known test/lint/build runners.
+  if (toolID !== "bash") return undefined
+  if (!cmd) return undefined
+  const RUNNER_RE = /(?:^|\s)((?:npm|npx|bun|pnpm|yarn|deno)\s+(?:run\s+)?(?:test|lint|check|typecheck|type-check|format|fmt|build|ci|audit|fix|eslint|vitest|jest|mocha|ava|tap|tape|pytest|ruff|flake8|black|mypy|pyright|prettier|biome|oxlint|rome|tsc)|(?:^|\s)(?:jest|vitest|mocha|ava|tap|tape|pytest|unittest|rspec|minitest|rubocop|eslint|tsc|cargo|go|ruff|flake8|black|mypy|pyright|prettier|biome|oxlint|rome)(?:\s|$))/i
+  if (!RUNNER_RE.test(cmd)) return undefined
 
   const lines = output.split("\n")
   const firstLines = lines.slice(0, 10).join("\n")
+
+  // Linters / TypeScript compiler / ESLint — detect file:row:col lines first
+  // so e.g. "src/a.ts:12:3 error: ..." is not misread as "3 error" test results.
+  if (/(error|warning|problem)s?/i.test(firstLines) || /^\s*\S+:\d+:\d+/m.test(output)) {
+    const linterSummary = extractLinterSummary(lines, toolID)
+    if (linterSummary) return linterSummary
+  }
 
   // Test runners: Jest / Vitest / Mocha / Tap / pytest
   const testMatch = firstLines.match(/(\d+)\s+(passed|failed|skipped|error|success|tests?)/i)
   if (testMatch || /(Test Suites|Tests:|PASS|FAIL|✓|✗|passed|failed)/i.test(firstLines)) {
     const summary = extractTestSummary(lines)
     if (summary) return summary
-  }
-
-  // Linters / TypeScript compiler / ESLint
-  if (/(error|warning|problem)s?/i.test(firstLines) || /^\s*\S+:\d+:\d+/m.test(output)) {
-    return extractLinterSummary(lines, toolID)
   }
 
   // Package installers
@@ -165,11 +173,11 @@ function extractBuildSummary(lines: string[]): string | undefined {
   return out
 }
 
-export function compressToolOutput(toolID: string, output: string): string {
+export function compressToolOutput(toolID: string, output: string, cmd?: string): string {
   if (!output) return output
   if (!isCompressible(toolID)) return output
 
-  const semantic = semanticCompress(output, toolID)
+  const semantic = semanticCompress(output, toolID, cmd)
   if (semantic) return semantic
 
   const lines = output.split("\n")

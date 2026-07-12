@@ -50,7 +50,7 @@ test("compactMessages: keeps recent turns untouched", () => {
   expect(msgs[1].parts[0].state.output).toBe(long)
 })
 
-test("compactMessages: skips already-compacted outputs on second call", () => {
+test("compactMessages: re-compacts already-compacted outputs on second call", () => {
   const long = "x".repeat(2000)
   const msgs = [
     mkMsg([mkTool("read", long)]),
@@ -59,14 +59,16 @@ test("compactMessages: skips already-compacted outputs on second call", () => {
   ]
   const first = compactMessages(msgs, 0.9)
   expect(first.count).toBe(1)
-  // Second call with fresh copies of the same messages should not re-compact
+  // Second call with fresh copies of the same messages must re-compact them,
+  // because each transform receives fresh copies of the full output.
   const msgs2 = [
     mkMsg([mkTool("read", long)]),
     mkMsg([]),
     mkMsg([]),
   ]
   const second = compactMessages(msgs2, 0.9)
-  expect(second.count).toBe(0)
+  expect(second.count).toBe(1)
+  expect(msgs2[0].parts[0].state.output).toContain("omitted")
 })
 
 test("compactMessages: skips short outputs", () => {

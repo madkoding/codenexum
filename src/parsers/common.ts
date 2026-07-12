@@ -1,5 +1,30 @@
 import type { Chunk } from "../types"
 
+export function lineOf(c: string, idx: number): number {
+  let line = 1
+  for (let i = 0; i < idx; i++) {
+    if (c[i] === "\n") line++
+  }
+  return line
+}
+
+export function createLineResolver(c: string): { lineOf: (idx: number) => number } {
+  const newlines: number[] = []
+  for (let i = 0; i < c.length; i++) {
+    if (c[i] === "\n") newlines.push(i)
+  }
+  function lineOf(idx: number): number {
+    let lo = 0, hi = newlines.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (newlines[mid] < idx) lo = mid + 1
+      else hi = mid
+    }
+    return lo + 1
+  }
+  return { lineOf }
+}
+
 export function getLang(ext: string): string {
   const map: Record<string, string> = {
     ".py": "python", ".js": "javascript", ".jsx": "javascript", ".ts": "typescript", ".tsx": "typescript",

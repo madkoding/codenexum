@@ -65,7 +65,8 @@ export function search(db: Database, query: string, n: number): SearchResult[] {
   const ftsQuery = buildSearchQuery(parsed)
   if (!ftsQuery) return []
 
-  let results = dbRawSearch(db, ftsQuery, n * 3)
+  const fetchLimit = Math.min(n * 2, 100)
+  let results = dbRawSearch(db, ftsQuery, fetchLimit)
   if (!results.length) return []
 
   results = applyFilters(results, parsed.filters)
@@ -121,12 +122,15 @@ function rankResults(results: SearchResult[], parsed: ParsedQuery): SearchResult
       score += 300
     }
 
-    // Boost recently modified files
+    // Boost recently modified files. Skipped on large result sets to avoid
+    // many blocking stat syscalls per search.
     try {
-      const mtime = statSync(r.file).mtimeMs
-      const daysOld = (Date.now() - mtime) / (1000 * 60 * 60 * 24)
-      if (daysOld < 7) score -= 50
-      else if (daysOld < 30) score -= 25
+      if (results.length <= 50) {
+        const mtime = statSync(r.file).mtimeMs
+        const daysOld = (Date.now() - mtime) / (1000 * 60 * 60 * 24)
+        if (daysOld < 7) score -= 50
+        else if (daysOld < 30) score -= 25
+      }
     } catch {}
 
     return { ...r, score }

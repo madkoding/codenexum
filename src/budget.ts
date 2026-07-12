@@ -37,7 +37,16 @@ interface SessionState {
 }
 
 const sessionStates = new Map<string, SessionState>()
+const MAX_SESSION_STATES = 256
 let defaultState: SessionState = { projectId: undefined, lastInputTokens: 0, sessionId: undefined }
+
+function pruneSessionStates(): void {
+  while (sessionStates.size > MAX_SESSION_STATES) {
+    const first = sessionStates.keys().next().value as string | undefined
+    if (first) sessionStates.delete(first)
+    else break
+  }
+}
 
 function getState(sessionId?: string): SessionState {
   if (sessionId && sessionStates.has(sessionId)) return sessionStates.get(sessionId)!
@@ -47,7 +56,10 @@ function getState(sessionId?: string): SessionState {
 export function setProjectContext(directory: string, sessionId?: string): void {
   const pid = projectId(directory)
   const st: SessionState = { projectId: pid, lastInputTokens: 0, sessionId }
-  if (sessionId) sessionStates.set(sessionId, st)
+  if (sessionId) {
+    sessionStates.set(sessionId, st)
+    pruneSessionStates()
+  }
   else defaultState = st
 }
 

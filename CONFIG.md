@@ -29,4 +29,5 @@ All settings are environment variables prefixed with `CONTEXT_MANAGER_`.
 | `CONTEXT_MANAGER_DASHBOARD_PORT` | `3567` | Port for the local web dashboard. |
 | `CONTEXT_MANAGER_DASHBOARD_AUTO_START` | `1` | Auto-start dashboard on opencode launch. |
 | `CONTEXT_MANAGER_MAX_FILES` | `10000` | Max files to walk during auto-index. |
+| `CONTEXT_MANAGER_MAX_FILE_BYTES` | `1048576` (1 MiB) | Skip files larger than this to avoid indexing generated bundles. |
 | `CONTEXT_MANAGER_CACHE_DIR` | `~/.cache/opencode` | Directory for the SQLite index and caches. |

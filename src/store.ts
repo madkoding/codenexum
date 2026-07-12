@@ -80,7 +80,7 @@ export function dbInsertChunks(db: Database, chunks: Chunk[]): void {
   const seen = new Set<string>()
   const tx = db.transaction(() => {
     for (const c of chunks) {
-      const key = `${c.file}\u0000${c.name}\u0000${c.type}`
+      const key = `${c.file}\u0000${c.name}\u0000${c.type}\u0000${c.line}`
       if (seen.has(key)) continue
       seen.add(key)
       run(
@@ -144,12 +144,21 @@ export function dbFileCount(db: Database): number {
   return row.n
 }
 
+const MAX_FTS_TERMS = 30
+
 export function buildFtsQuery(query: string): string {
-  return query.toLowerCase()
+  const terms = query.toLowerCase()
     .split(/[^a-z0-9_]+/)
     .filter(t => t.length >= 2)
-    .map(t => `"${t}"`)
-    .join(" OR ")
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const t of terms) {
+    if (seen.has(t)) continue
+    seen.add(t)
+    out.push(`"${t.replace(/"/g, "'")}"`)
+    if (out.length >= MAX_FTS_TERMS) break
+  }
+  return out.join(" OR ")
 }
 
 export function dbSearch(db: Database, query: string, n: number): SearchResult[] {

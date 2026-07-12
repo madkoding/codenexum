@@ -146,8 +146,8 @@ test("updateFile: parses .md files", () => {
   expect(dbChunkCount(db)).toBe(1)
 })
 
-test("hash: deterministic MD5", () => {
+test("hash: deterministic SHA-256", () => {
   expect(hash("hello")).toBe(hash("hello"))
   expect(hash("hello")).not.toBe(hash("world"))
-  expect(hash("")).toHaveLength(32)
+  expect(hash("")).toHaveLength(64)
 })

@@ -13,15 +13,30 @@ export interface CacheEntry {
 }
 
 const DEFAULT_MAX_ENTRIES = 50
+const MAX_ENTRIES_HARD_CAP = 5000
 const DEFAULT_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+function getMaxEntries(): number {
+  const v = process.env.CONTEXT_MANAGER_CACHE_MAX_ENTRIES
+  if (!v) return DEFAULT_MAX_ENTRIES
+  const n = parseInt(v, 10)
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_ENTRIES
+}
+
+function getTtlMs(): number {
+  const v = process.env.CONTEXT_MANAGER_CACHE_TTL_MS
+  if (!v) return DEFAULT_TTL_MS
+  const n = parseInt(v, 10)
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_TTL_MS
+}
 
 export class ToolOutputCache {
   private cache = new Map<string, CacheEntry>()
   private max: number
   private ttl: number
 
-  constructor(max = DEFAULT_MAX_ENTRIES, ttl = DEFAULT_TTL_MS) {
-    this.max = max
+  constructor(max = getMaxEntries(), ttl = getTtlMs()) {
+    this.max = Math.min(Math.max(1, max), MAX_ENTRIES_HARD_CAP)
     this.ttl = ttl
   }
 
@@ -61,16 +76,10 @@ export class ToolOutputCache {
   }
 
   private evictIfNeeded(): void {
+    // Map iteration follows insertion order; delete the oldest entries first.
     while (this.cache.size > this.max) {
-      let oldestKey: string | undefined
-      let oldestTs = Number.MAX_SAFE_INTEGER
-      for (const [k, v] of this.cache) {
-        if (v.ts < oldestTs) {
-          oldestTs = v.ts
-          oldestKey = k
-        }
-      }
-      if (oldestKey) this.cache.delete(oldestKey)
+      const first = this.cache.keys().next().value as string | undefined
+      if (first) this.cache.delete(first)
       else break
     }
   }

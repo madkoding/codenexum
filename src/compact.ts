@@ -14,6 +14,7 @@ interface MsgEntry { info: { role?: string; sessionID?: string }; parts: AnyPart
 let compactionCount = 0
 
 const MAX_SESSIONS = 64
+const MAX_FINGERPRINTS_PER_SESSION = 500
 
 // Track which outputs have already been compacted per session to avoid
 // re-processing the same fresh copies on repeated messages.transform calls.
@@ -30,6 +31,14 @@ function ensureSession(sessionID: string): Set<string> {
     compactedFingerprintsBySession.set(sessionID, s)
   }
   return s
+}
+
+function markCompacted(s: Set<string>, fingerprint: string): void {
+  if (s.size >= MAX_FINGERPRINTS_PER_SESSION) {
+    const first = s.keys().next().value
+    if (first !== undefined) s.delete(first)
+  }
+  s.add(fingerprint)
 }
 
 export function getCompactionCount(): number {
@@ -67,10 +76,23 @@ export function compactMessages(messages: MsgEntry[], fillRatio: number): { coun
       const hint = summarizeInput(toolName, input)
       const originalLen = st.output.length
 
-      const fingerprint = `${toolName}:${st.output.slice(0, 200)}`
+      const fingerprint = `${toolName}:${originalLen}:${st.output.slice(0, 64)}:${st.output.slice(-64)}`
       const sessionFingerprints = compactedFingerprintsBySession.get(sessionID)
-      // Skip if already compacted in a previous transform for this session
-      if (sessionFingerprints?.has(fingerprint)) continue
+      // If already compacted in a previous transform for this session, re-apply
+      // the same compacted replacement. Transforms receive fresh copies each call,
+      // so the full original output reappears and must be compacted again.
+      if (sessionFingerprints?.has(fingerprint)) {
+        const indexRef = buildIndexReference(toolName, input)
+        if (indexRef) {
+          st.output = `[${toolName}${hint}] → (output omitted: ${originalLen} chars; ${indexRef})`
+        } else {
+          st.output = `[${toolName}${hint}] → (output omitted: ${originalLen} chars; rerun if needed)`
+        }
+        st.time = st.time || {}
+        st.time.compacted = Date.now()
+        compacted++
+        continue
+      }
       // Handle duplicates within the same call
       if (seenOutputs.has(fingerprint)) {
         st.output = `[${toolName}${hint}] → (duplicate output omitted; see earlier result)`
@@ -96,7 +118,7 @@ export function compactMessages(messages: MsgEntry[], fillRatio: number): { coun
   }
   if (newlyCompacted.size > 0) {
     const s = ensureSession(sessionID)
-    for (const f of newlyCompacted) s.add(f)
+    for (const f of newlyCompacted) markCompacted(s, f)
   }
   compactionCount += compacted
   return { count: compacted }

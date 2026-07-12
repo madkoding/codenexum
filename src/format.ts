@@ -57,13 +57,14 @@ function buildSnippet(body: string, maxLines: number, startLine: number): string
     display = [...lines.slice(0, head), `… (${lines.length - head - tail} more lines) …`, ...lines.slice(-tail)]
   }
 
+  let realLine = startLine
   return display
-    .map((line, idx) => {
-      const num = startLine + idx
-      // Re-number placeholder lines so they don't look like real line numbers
+    .map((line) => {
+      // Placeholder elision lines are not real code lines; don't consume a line number.
       if (line.startsWith("…") && line.endsWith("…")) {
         return `   │ ${line}`
       }
+      const num = realLine++
       return `${String(num).padStart(3)}│ ${line}`
     })
     .join("\n")

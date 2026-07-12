@@ -61,7 +61,7 @@ export function getRegistry(): Database {
 }
 
 export function projectId(directory: string): string {
-  return createHash("md5").update(directory).digest("hex").slice(0, 16)
+  return createHash("sha256").update(directory).digest("hex").slice(0, 16)
 }
 
 export function projectDbPath(directory: string): string {
@@ -205,8 +205,9 @@ export interface GlobalUsage {
   totalMeasuredTokens: number
 }
 
-export function getGlobalUsage(): GlobalUsage {
+export function getGlobalUsage(days = 30): GlobalUsage {
   const db = getRegistry()
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
   const row = (db as any).query(`
     SELECT
       SUM(CASE WHEN event_type = 'search' THEN 1 ELSE 0 END) as totalSearches,
@@ -221,7 +222,8 @@ export function getGlobalUsage(): GlobalUsage {
       SUM(CASE WHEN event_type = 'generative_compression' THEN tokens_saved ELSE 0 END) as totalGenerativeSaved,
       SUM(CASE WHEN event_type = 'output_compression' THEN tokens_saved ELSE 0 END) as totalOutputCompressionSaved
     FROM usage_events
-  `).get() as any
+    WHERE ts >= ?
+  `, cutoff).get() as any
   const compressionSaved = row?.totalCompressionSaved || 0
   const searchSavedChars = row?.totalSearchSaved || 0
   const indexSavedTokens = row?.totalIndexSavedTokens || 0

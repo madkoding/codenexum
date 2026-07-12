@@ -107,13 +107,12 @@ test("tryInterceptOutput respects offset/limit for reads", () => {
   expect(result.output).not.toContain("foo")
 })
 
-test("tryInterceptOutput replaces grep with search results", () => {
+test("tryInterceptOutput warns for grep but does not replace", () => {
   const c = detectInterceptCandidate(db, tmpDir, "grep", { pattern: "handleAuth" })!
   const nativeOutput = "auth.ts:function handleAuth(req) { return true }\n".repeat(20)
   const result = tryInterceptOutput(db, tmpDir, c, nativeOutput)
-  expect(result.replaced).toBe(true)
-  expect(result.output).toContain("handleAuth")
-  expect(result.tokensSaved).toBeGreaterThanOrEqual(0)
+  expect(c.substitutable).toBe(false)
+  expect(result.replaced).toBe(false)
 })
 
 test("tryInterceptOutput replaces glob with file list", () => {

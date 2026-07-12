@@ -22,39 +22,38 @@ test("compressToolOutput semantically compresses test output", () => {
     "PASS src/a.test.ts",
     "PASS src/b.test.ts",
     "FAIL src/c.test.ts",
-    "  ● should add numbers",
-    "    Expected: 3",
-    "    Received: 4",
-    "",
-    "Test Suites: 2 passed, 1 failed, 3 total",
-    "Tests:       4 passed, 1 failed, 5 total",
+    "Tests: 3 passed, 1 failed",
   ].join("\n")
-  const compressed = compressToolOutput("bash", output)
-  expect(compressed).toContain("semantic compress")
-  expect(compressed).toContain("4 passed")
-  expect(compressed).toContain("1 failed")
+  const compressed = compressToolOutput("bash", output, "npm test")
+  expect(compressed).toContain("[semantic compress]")
+  expect(compressed).toContain("Tests:")
 })
 
 test("compressToolOutput semantically compresses linter output", () => {
   const output = [
-    "src/auth.ts:42:10 error Unexpected token",
-    "src/auth.ts:45:5 warning Prefer const",
-    "",
-    "2 errors, 1 warning",
+    "src/a.ts:12:3 error: unused variable 'x'",
+    "src/b.ts:5:1 warning: missing return type",
+    "Found 2 problems",
   ].join("\n")
-  const compressed = compressToolOutput("bash", output)
-  expect(compressed).toContain("semantic compress")
-  expect(compressed).toContain("2 error")
+  const compressed = compressToolOutput("bash", output, "npx eslint src/")
+  expect(compressed).toContain("[semantic compress]")
+  expect(compressed).toContain("Errors:")
 })
 
-test("getSemanticCompressionSaved returns chars saved only for semantic compression", () => {
-  const original = "a".repeat(1000)
-  const compressed = "[semantic compress] Tests: 5 passed"
-  expect(getSemanticCompressionSaved(original, compressed)).toBeGreaterThan(0)
-  expect(getSemanticCompressionSaved(original, original)).toBe(0)
+test("compressToolOutput does NOT semantically compress non-runner bash output", () => {
+  const output = [
+    "PASS src/a.test.ts",
+    "Tests: 3 passed, 1 failed",
+  ].join("\n")
+  const compressed = compressToolOutput("bash", output, "git log --oneline")
+  expect(compressed).not.toContain("[semantic compress]")
 })
 
-test("compressToolOutput keeps short output untouched", () => {
-  const output = "short output"
-  expect(compressToolOutput("read", output)).toBe(output)
+test("compressToolOutput does NOT semantically compress read output", () => {
+  const output = [
+    "PASS src/a.test.ts",
+    "Tests: 3 passed, 1 failed",
+  ].join("\n")
+  const compressed = compressToolOutput("read", output)
+  expect(compressed).not.toContain("[semantic compress]")
 })

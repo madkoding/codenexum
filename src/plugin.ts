@@ -10,7 +10,7 @@ import {
 } from "./store"
 import { search } from "./search"
 import { formatSearchResults } from "./format"
-import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn } from "./indexer"
+import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, getMaxFileBytes, type LogFn } from "./indexer"
 import { parseSymbolRef } from "./resolve"
 import { buildSystemPrompt } from "./prompt"
 import { compressToolOutput, isCompressible, getSemanticCompressionSaved } from "./compress"
@@ -234,7 +234,7 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           if (!ps) ps = await ensureProject(root, false, log)
           if (!ps?.db) return "Plugin still initializing. Try again in a second."
           const sid = c.sessionID
-          const { files, chunks, fileHashes, edges, capped } = indexProject(root)
+          const { files, chunks, fileHashes, edges, capped } = indexProject(root, getMaxFiles())
           dbClear(ps.db)
           dbInsertChunks(ps.db, chunks)
           dbInsertEdges(ps.db, edges)
@@ -304,8 +304,9 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           const snippetLines = args.snippet ?? (isCompact ? 0 : 20)
           const usedSnippet = !isCompact && snippetLines > 0 && results.some(r => r.body)
           recordSearch(sid, args.query, usedSnippet)
-          // Measure search savings: compare snippet size vs full file size
-          if (usedSnippet) {
+          // Measure search savings: compare snippet size vs full file size.
+          // Skip stat calls on large result sets to avoid blocking I/O.
+          if (usedSnippet && results.length <= 20) {
             let snippetChars = 0
             let fileChars = 0
             for (const r of results) {
@@ -560,6 +561,10 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           log("debug", "removed file from index", { file: fp })
         } else if (ev === "add" || ev === "change") {
           debouncedUpdateFile(eventDb, fp, 500, log)
+          if (!editedFilesThisSession.has(fp)) {
+            // watcher events are likely background changes; debounce them
+            log("debug", "watcher triggered reindex", { file: fp })
+          }
         }
       }
       if (event.type === "message.part.updated" && props?.part) {
@@ -761,30 +766,29 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
         }
       }
 
-      if (!isCompressible(t)) {
-        if (callID) toolCalls.delete(callID)
-        return
-      }
-      const cur = (output as { output?: string }).output
-      if (typeof cur === "string" && cur.length > 0) {
-        const compressed = compressToolOutput(t, cur)
-        const saved = cur.length - compressed.length
-        const semanticSaved = getSemanticCompressionSaved(cur, compressed)
-        // Use the real command as the intercept label, not the vague tool name
-        const label = cmd ? cmd.slice(0, 120) : t
-        if (saved > 0) {
-          if (semanticSaved > 0) {
-            recordSemanticCompression(sid, semanticSaved, resolvedPath)
-          } else {
-            recordCompression(sid, saved, resolvedPath)
+      try {
+        if (!isCompressible(t)) return
+        const cur = (output as { output?: string }).output
+        if (typeof cur === "string" && cur.length > 0) {
+          const compressed = compressToolOutput(t, cur, cmd)
+          const saved = cur.length - compressed.length
+          const semanticSaved = getSemanticCompressionSaved(cur, compressed)
+          // Use the real command as the intercept label, not the vague tool name
+          const label = cmd ? cmd.slice(0, 120) : t
+          if (saved > 0) {
+            if (semanticSaved > 0) {
+              recordSemanticCompression(sid, semanticSaved, resolvedPath)
+            } else {
+              recordCompression(sid, saved, resolvedPath)
+            }
           }
+          if (compressed !== cur) (output as { output: string }).output = compressed
+          recordToolIntercept(sid, label, resolvedPath)
         }
-        if (compressed !== cur) (output as { output: string }).output = compressed
-        recordToolIntercept(sid, label, resolvedPath)
-      }
-      if (callID) toolCalls.delete(callID)
       } catch (e) {
         log("error", "tool.execute.after failed", { error: String(e) })
+      } finally {
+        if (callID) toolCalls.delete(callID)
       }
     },
   }
