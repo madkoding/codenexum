@@ -60,10 +60,15 @@ function ensureProjectDb(projId: string): Database | null {
   const proj = getProject(projId)
   if (!proj) return null
   if (!existsSync(proj.dbPath)) return null
-  const db = new SqliteDatabase(proj.dbPath)
-  initSchema(db)
-  projectDbs.set(projId, db)
-  return db
+  try {
+    const db = new SqliteDatabase(proj.dbPath)
+    initSchema(db)
+    projectDbs.set(projId, db)
+    return db
+  } catch (e) {
+    console.error("[context-manager dashboard] failed to open project DB:", proj.dbPath, e)
+    return null
+  }
 }
 
 export async function startDashboard(_db?: Database, _sessionID?: string, _projId?: string): Promise<DashboardState> {
@@ -110,53 +115,46 @@ export async function startDashboard(_db?: Database, _sessionID?: string, _projI
 // ── HTTP routing (kept for compat / Vite proxy) ──
 
 function handleRequest(req: Request, srv: any): Response {
-  const url = new URL(req.url)
-  if (!isLocalhost(url.hostname)) return new Response("Forbidden: localhost only", { status: 403 })
-  if (!isAllowedOrigin(req)) return new Response("Forbidden: invalid origin", { status: 403 })
+  try {
+    const url = new URL(req.url)
+    if (!isLocalhost(url.hostname)) return new Response("Forbidden: localhost only", { status: 403 })
 
-  // WebSocket upgrade
-  if (url.pathname === "/ws") {
-    srv.upgrade(req)
-    return new Response(null, { status: 101 })
+    // WebSocket upgrade
+    if (url.pathname === "/ws") {
+      srv.upgrade(req)
+      return new Response(null, { status: 101 })
+    }
+
+    const path = url.pathname
+    if (path === "/api/health") return json({ ok: true })
+    if (path === "/api/projects") return json(projectsApi())
+    if (path === "/api/aggregate") return json(aggregateApi())
+
+    const projMatch = path.match(/^\/api\/project\/([a-f0-9]+)\/stats$/)
+    if (projMatch) {
+      const db = ensureProjectDb(projMatch[1])
+      if (!db) return json({ error: "project not found" }, 404)
+      return json(statsApi(db, projMatch[1]))
+    }
+
+    const searchMatch = path.match(/^\/api\/project\/([a-f0-9]+)\/search$/)
+    if (searchMatch) {
+      const db = ensureProjectDb(searchMatch[1])
+      if (!db) return json({ error: "project not found" }, 404)
+      const q = url.searchParams.get("q") || ""
+      const n = parseInt(url.searchParams.get("n") || "10", 10)
+      return json({ results: dbSearch(db, q, n).map(r => ({ name: r.name, type: r.type, file: r.file, line: r.line, lineEnd: r.lineEnd })) })
+    }
+
+    return new Response("Not found", { status: 404 })
+  } catch (e) {
+    console.error("[context-manager dashboard] request failed:", req.url, e)
+    return json({ error: "Internal server error", detail: String(e) }, 500)
   }
-
-  const path = url.pathname
-  if (path === "/api/health") return json({ ok: true })
-  if (path === "/api/projects") return json(projectsApi())
-  if (path === "/api/aggregate") return json(aggregateApi())
-
-  const projMatch = path.match(/^\/api\/project\/([a-f0-9]+)\/stats$/)
-  if (projMatch) {
-    const db = ensureProjectDb(projMatch[1])
-    if (!db) return json({ error: "project not found" }, 404)
-    return json(statsApi(db, projMatch[1]))
-  }
-
-  const searchMatch = path.match(/^\/api\/project\/([a-f0-9]+)\/search$/)
-  if (searchMatch) {
-    const db = ensureProjectDb(searchMatch[1])
-    if (!db) return json({ error: "project not found" }, 404)
-    const q = url.searchParams.get("q") || ""
-    const n = parseInt(url.searchParams.get("n") || "10", 10)
-    return json({ results: dbSearch(db, q, n).map(r => ({ name: r.name, type: r.type, file: r.file, line: r.line, lineEnd: r.lineEnd })) })
-  }
-
-  return new Response("Not found", { status: 404 })
 }
 
 function isLocalhost(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1" || hostname === "[::1]"
-}
-
-function isAllowedOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin")
-  if (!origin) return true // same-origin / direct fetch
-  try {
-    const u = new URL(origin)
-    return u.hostname === "null" || isLocalhost(u.hostname)
-  } catch {
-    return false
-  }
 }
 
 function json(data: unknown, status = 200): Response {
@@ -184,7 +182,9 @@ function handleWsMessage(ws: any, msg: any) {
       const results = dbSearch(db, data.query || "", data.n || 10)
       ws.send(JSON.stringify({ type: "search:results", data: results.map(r => ({ name: r.name, type: r.type, file: r.file, line: r.line, lineEnd: r.lineEnd })) }))
     }
-  } catch {}
+  } catch (e) {
+    console.error("[context-manager dashboard] WebSocket message error:", e)
+  }
 }
 
 // ── API builders (same data, no HTML) ──
