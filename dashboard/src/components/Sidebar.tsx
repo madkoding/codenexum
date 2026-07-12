@@ -31,7 +31,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       {/* Logo */}
       <div className="px-4 py-5 flex items-center gap-2 border-b border-gray-800">
         <Activity size={20} className="text-accent shrink-0" />
-        <span className="font-bold text-sm">Context Manager v2.1.0</span>
+        <span className="font-bold text-sm">Context Manager v2.1.1</span>
       </div>
 
       {/* Global Dashboard */}
