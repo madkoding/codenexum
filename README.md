@@ -43,10 +43,10 @@ See [CONFIG.md](CONFIG.md) for all environment variables (`CONTEXT_MANAGER_*`).
 
 ## Uninstall
 
-Remove the plugin from your `opencode.json` plugin array and restart. The plugin self-cleans. For full cleanup:
+Remove `"@madtech/opencode-context-manager-plugin"` from your `opencode.json` plugin array and restart. The plugin self-cleans. For full manual cleanup:
 
 ```bash
-rm -rf ~/.config/opencode/plugins/context-manager-loading-shim.ts ~/.cache/opencode/context-manager.sqlite* ~/.config/opencode/skills/context-manager
+rm -rf ~/.cache/opencode/context-manager.sqlite* ~/.cache/opencode/context-manager-*.sqlite* ~/.config/opencode/skills/context-manager
 ```
 
 ## License
