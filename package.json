@@ -1,6 +1,6 @@
 {
   "name": "@madtech/opencode-context-manager-plugin",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "opencode plugin for context management in large projects",
   "license": "MIT",
   "main": "plugins/@madtech-opencode-context-manager-plugin.ts",
