@@ -5,7 +5,7 @@ import { MetricCard, Card, Row, Gauge, ProgressBar, DataTable, RecommendationCar
 import { fmt, fmtK, pct, relTime, bucketTimeline } from "../lib/format"
 import type { ProjectStats, SavingsByMechanism } from "../types"
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
 } from "recharts"
 
@@ -74,9 +74,9 @@ export default function ProjectDetailPage() {
   const timeline = bucketTimeline(stats.recentEvents.length > 0 ? stats.recentEvents.map((e: any) => ({ ts: e.ts })) : [], 15 * 60 * 1000)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Hero KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <MetricCard value={fmtK(stats.measuredSavings)} label="Tokens saved (real)" subValue={`~${fmt(stats.measuredSavings)}`} />
         <MetricCard value={pct(stats.efficiencyRatio)} label="Efficiency ratio" subValue={`${fmt(stats.indexSubstitutions)} substitutions`} />
         <MetricCard value={pct(stats.contextFill)} label="Context fill" subValue={stats.compactions > 0 ? `${stats.compactions} compactions` : "Healthy"} />
@@ -86,7 +86,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Context health + Savings breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <Card title="Context health" className="lg:col-span-1">
           <div className="flex items-center justify-around py-2">
             <Gauge value={stats.contextFill} label="Context fill" />
@@ -110,7 +110,6 @@ export default function ProjectDetailPage() {
                   <Pie data={savingsData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={3}>
                     {savingsData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "#12151b", border: "1px solid #1f2937", borderRadius: "8px" }} formatter={(v: any) => fmt(v)} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -190,7 +189,6 @@ export default function ProjectDetailPage() {
               <XAxis dataKey="ts" tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} tick={{ fill: "#8b92a8", fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fill: "#8b92a8", fontSize: 11 }} allowDecimals={false} />
               <YAxis yAxisId="right" orientation="right" tick={{ fill: "#8b92a8", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "#12151b", border: "1px solid #1f2937", borderRadius: "8px" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Line yAxisId="left" type="monotone" dataKey="searches" name="Searches" stroke="#3b82f6" dot={false} />
               <Line yAxisId="left" type="monotone" dataKey="reads" name="Native reads" stroke="#ef4444" dot={false} />
@@ -201,7 +199,7 @@ export default function ProjectDetailPage() {
       </Card>
 
       {/* Index + search + details */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <Card title="Index status" className="lg:col-span-1">
           <Row label="Status" value={stats.status || "-"} />
           <Row label="Chunks" value={fmt(stats.chunks)} />
@@ -215,7 +213,6 @@ export default function ProjectDetailPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
                   <XAxis dataKey="ext" tick={{ fill: "#8b92a8", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#8b92a8", fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ background: "#12151b", border: "1px solid #1f2937", borderRadius: "8px" }} />
                   <Bar dataKey="n" fill="#3b82f6" />
                 </BarChart>
               </ResponsiveContainer>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { LayoutDashboard, FolderGit2, Activity } from "lucide-react"
+import { LayoutDashboard, FolderGit2, Activity, Trash2 } from "lucide-react"
 import { useWebSocket } from "../hooks/useWebSocket"
 import type { ProjectSummary } from "../types"
 import { fmt } from "../lib/format"
@@ -31,7 +31,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       {/* Logo */}
       <div className="px-4 py-5 flex items-center gap-2 border-b border-gray-800">
         <Activity size={20} className="text-accent shrink-0" />
-        <span className="font-bold text-sm">Context Manager</span>
+        <span className="font-bold text-sm">Context Manager v2.1.0</span>
       </div>
 
       {/* Global Dashboard */}
@@ -60,20 +60,32 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           projects.map((p) => {
             const active = isActive(`/project/${p.id}`)
             return (
-              <Link
-                key={p.id}
-                to={`/project/${p.id}`}
-                onClick={onNavigate}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm mb-0.5 transition-colors ${
-                  active ? "bg-accent/15 text-accent" : "text-muted hover:text-text hover:bg-panel2"
-                }`}
-              >
-                <FolderGit2 size={18} className="shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate">{p.name}</div>
-                  <div className="text-xs text-muted/60">{fmt(p.chunks)} chunks</div>
-                </div>
-              </Link>
+              <div key={p.id} className="group flex items-center gap-1">
+                <Link
+                  to={`/project/${p.id}`}
+                  onClick={onNavigate}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm flex-1 min-w-0 transition-colors ${
+                    active ? "bg-accent/15 text-accent" : "text-muted hover:text-text hover:bg-panel2"
+                  }`}
+                >
+                  <FolderGit2 size={18} className="shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate">{p.name}</div>
+                    <div className="text-xs text-muted/60">{fmt(p.chunks)} chunks</div>
+                  </div>
+                </Link>
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Delete "${p.name}"?`)) return
+                    await fetch(`/api/project/${p.id}`, { method: "DELETE" })
+                    setProjects(prev => prev.filter(x => x.id !== p.id))
+                  }}
+                  className="p-1.5 rounded-lg text-muted/40 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                  title="Delete project"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             )
           })
         )}

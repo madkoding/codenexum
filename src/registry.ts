@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
 import { join, basename } from "path"
-import { existsSync, mkdirSync } from "fs"
+import { existsSync, mkdirSync, unlinkSync } from "fs"
 import { createHash } from "crypto"
 import { charsToTokens } from "./tokens"
 
@@ -411,6 +411,21 @@ export function getToolTypeDistribution(): { tool: string; count: number }[] {
     grouped.set(base, (grouped.get(base) || 0) + r.count)
   }
   return Array.from(grouped.entries()).map(([tool, count]) => ({ tool, count })).sort((a, b) => b.count - a.count)
+}
+
+export function deleteProject(id: string): boolean {
+  const proj = getProject(id)
+  if (!proj) return false
+
+  const db = getRegistry()
+  ;(db as any).run("DELETE FROM projects WHERE id = ?", id)
+  ;(db as any).run("DELETE FROM usage_events WHERE project_id = ?", id)
+
+  try {
+    if (existsSync(proj.dbPath)) unlinkSync(proj.dbPath)
+  } catch {}
+
+  return true
 }
 
 export function closeRegistry(): void {

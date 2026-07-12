@@ -4,7 +4,7 @@ import { MetricCard, Card, Gauge, ProgressBar, DataTable, Badge } from "../compo
 import { fmt, fmtK, pct, bucketTimeline } from "../lib/format"
 import type { ProjectSummary, AggregateData } from "../types"
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell,
 } from "recharts"
 
@@ -58,17 +58,16 @@ export default function ProjectsPage() {
   const timeline = bucketTimeline(agg?.timeline || [], 15 * 60 * 1000)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Hero metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <MetricCard value={fmtK(totalMeasured)} label="Tokens saved (real)" subValue={`~${fmt(totalMeasured)}`} />
-        <MetricCard value={pct(agg?.globalEfficiency ?? avgEfficiency)} label="Global efficiency" />
         <MetricCard value={fmt(totalSearches)} label="Total searches" />
         <MetricCard value={fmt(projects.length)} label="Projects indexed" />
       </div>
 
       {/* Main charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <Card title="Global savings by mechanism" className="lg:col-span-2">
           <div className="h-56 flex items-center gap-6">
             <div className="h-full w-1/2">
@@ -77,8 +76,7 @@ export default function ProjectsPage() {
                   <Pie data={savingsData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={3}>
                     {savingsData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "#12151b", border: "1px solid #1f2937", borderRadius: "8px" }} formatter={(v: any) => fmt(v)} />
-                </PieChart>
+                  </PieChart>
               </ResponsiveContainer>
             </div>
             <div className="flex-1 space-y-2">
@@ -118,7 +116,6 @@ export default function ProjectsPage() {
               <XAxis dataKey="ts" tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} tick={{ fill: "#8b92a8", fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fill: "#8b92a8", fontSize: 11 }} allowDecimals={false} />
               <YAxis yAxisId="right" orientation="right" tick={{ fill: "#8b92a8", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "#12151b", border: "1px solid #1f2937", borderRadius: "8px" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Line yAxisId="left" type="monotone" dataKey="searches" name="Searches" stroke="#3b82f6" dot={false} />
               <Line yAxisId="left" type="monotone" dataKey="reads" name="Native reads" stroke="#ef4444" dot={false} />

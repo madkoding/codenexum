@@ -2,8 +2,8 @@ import type { ReactNode } from "react"
 
 export function MetricCard({ value, label, className = "", subValue }: { value: string; label: string; className?: string; subValue?: string }) {
   return (
-    <div className={`bg-panel border border-gray-800 rounded-xl p-5 ${className}`}>
-      <div className="text-2xl md:text-3xl font-bold text-accent">{value}</div>
+    <div className={`bg-panel border border-gray-800 rounded-xl p-3 ${className}`}>
+      <div className="text-xl font-bold text-accent">{value}</div>
       {subValue ? <div className="text-xs text-muted mt-1">{subValue}</div> : null}
       <div className="text-muted text-sm mt-1">{label}</div>
     </div>
@@ -12,8 +12,8 @@ export function MetricCard({ value, label, className = "", subValue }: { value: 
 
 export function Card({ title, children, className = "", action }: { title: string; children: ReactNode; className?: string; action?: ReactNode }) {
   return (
-    <div className={`bg-panel border border-gray-800 rounded-xl p-5 ${className}`}>
-      <div className="flex items-center justify-between mb-3">
+    <div className={`bg-panel border border-gray-800 rounded-xl p-3 ${className}`}>
+      <div className="flex items-center justify-between mb-2">
         <h2 className="text-xs uppercase tracking-wider text-muted">{title}</h2>
         {action ? <div>{action}</div> : null}
       </div>
@@ -31,7 +31,7 @@ export function Row({ label, value, highlight, muted }: { label: string; value: 
   )
 }
 
-export function Gauge({ value, label, size = 120 }: { value: number; label: string; size?: number }) {
+export function Gauge({ value, label, size = 96 }: { value: number; label: string; size?: number }) {
   const pct = Math.min(100, Math.max(0, value * 100))
   const radius = (size - 16) / 2
   const circumference = radius * Math.PI

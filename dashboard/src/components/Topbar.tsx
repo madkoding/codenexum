@@ -23,7 +23,7 @@ export default function Topbar({
           <Menu size={20} />
         </button>
         <div className="min-w-0">
-          <h1 className="text-lg font-bold truncate">{title}</h1>
+          <h1 className="text-base font-bold truncate">{title}</h1>
           {subtitle && <p className="text-xs text-muted truncate">{subtitle}</p>}
         </div>
       </div>

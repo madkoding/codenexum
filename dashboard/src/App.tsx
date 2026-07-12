@@ -23,8 +23,8 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg">
-      {/* Desktop sidebar: 240px on lg, 60px on md */}
-      <aside className="hidden md:block w-16 lg:w-60 shrink-0 bg-panel border-r border-gray-800 shadow-sidebar overflow-hidden">
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:block w-52 shrink-0 bg-panel border-r border-gray-800 shadow-sidebar overflow-hidden">
         <Sidebar />
       </aside>
 
@@ -42,7 +42,7 @@ export default function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Topbar title={title} subtitle={subtitle} connected={connected} onMenuClick={() => setDrawerOpen(true)} />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-6">
+          <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-4">
             <Outlet />
           </div>
         </main>

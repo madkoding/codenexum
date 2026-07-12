@@ -6,7 +6,7 @@ import { getCompactionCount } from "./compact"
 import { getRecentIndexEvents } from "./indexer"
 import {
   listProjects, getProject, getProjectUsage, getUsageTimeline, getToolTypeDistribution,
-  getMissesByTool, getTopMissedReads, getSavingsByMechanism, setOnUsageEvent, type ProjectInfo,
+  getMissesByTool, getTopMissedReads, getSavingsByMechanism, setOnUsageEvent, deleteProject, type ProjectInfo,
 } from "./registry"
 import { getFillRatio } from "./budget"
 import { existsSync } from "fs"
@@ -130,6 +130,16 @@ function handleRequest(req: Request, srv: any): Response {
     if (path === "/api/health") return json({ ok: true })
     if (path === "/api/projects") return json(projectsApi())
     if (path === "/api/aggregate") return json(aggregateApi())
+
+    const projDeleteMatch = path.match(/^\/api\/project\/([a-f0-9]+)$/)
+    if (projDeleteMatch && req.method === "DELETE") {
+      const projId = projDeleteMatch[1]
+      const existing = projectDbs.get(projId)
+      if (existing) { try { existing.close() } catch {}; projectDbs.delete(projId) }
+      if (!deleteProject(projId)) return json({ error: "project not found" }, 404)
+      notifyChanged()
+      return json({ ok: true })
+    }
 
     const projMatch = path.match(/^\/api\/project\/([a-f0-9]+)\/stats$/)
     if (projMatch) {
