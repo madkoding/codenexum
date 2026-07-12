@@ -119,8 +119,8 @@ function handleRequest(req: Request, srv: any): Response {
     const url = new URL(req.url)
     if (!isLocalhost(url.hostname)) return new Response("Forbidden: localhost only", { status: 403 })
 
-    // WebSocket upgrade
-    if (url.pathname === "/ws") {
+  // WebSocket upgrade
+  if (url.pathname === "/api/ws") {
       srv.upgrade(req)
       return new Response(null, { status: 101 })
     }
