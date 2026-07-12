@@ -1,10 +1,10 @@
 import { tool, type Plugin } from "@opencode-ai/plugin"
 import { Database } from "bun:sqlite"
 import { join, isAbsolute, relative, extname } from "path"
-import { existsSync, mkdirSync, unlinkSync, copyFileSync, writeFileSync, readFileSync } from "fs"
+import { existsSync, mkdirSync, unlinkSync, copyFileSync, readFileSync, statSync } from "fs"
 import {
   initSchema, dbInsertChunks, dbDeleteFile, dbSetFileHash, dbSetMeta,
-  dbGetMeta, dbChunkCount, dbFileCount, dbClear, dbStatsByLang, dbTopFiles,
+  dbGetMeta, dbGetFileHash, dbChunkCount, dbFileCount, dbClear, dbStatsByLang, dbTopFiles,
   dbGetSchemaVersion, dbSetSchemaVersion, SCHEMA_VERSION, dbInsertEdges,
   dbFindRelated, dbFindImpacted, dbEdgeCount,
 } from "./store"
@@ -13,207 +13,16 @@ import { formatSearchResults } from "./format"
 import { indexProject, updateFile, debouncedUpdateFile, getMaxFiles, type LogFn } from "./indexer"
 import { parseSymbolRef } from "./resolve"
 import { buildSystemPrompt } from "./prompt"
-import { compressToolOutput } from "./compress"
-import { recordTokens, getFillRatio, clearSession, recordSearch, recordFileRead, estimateSavings, getUsage, recordCompaction } from "./budget"
+import { compressToolOutput, isCompressible, getSemanticCompressionSaved } from "./compress"
+import { tryDecompressGenerativeOutput, getGenerativeCompressionOptions, getCompressOutputOptions, shouldCompressOutputMessage, compressMessage, compressGenerativeOutput, wrapCompressedOutput } from "./generative-compress"
+import { recordTokens, getFillRatio, clearSession, recordSearch, recordNativeSearch, recordFileRead, measuredSavings, getUsage, recordCompaction, recordCompression, recordSemanticCompression, recordCacheHit, recordToolIntercept, setProjectContext, recordSearchSavings, recordIndexSubstitution, recordIndexMiss, recordGenerativeCompression, recordOutputCompression } from "./budget"
 import { compactMessages, getCompactionCount } from "./compact"
-import { startDashboard, stopDashboard, getDashboardState } from "./dashboard"
-
-const SHIM_SOURCE = `import type { Plugin } from "@opencode-ai/plugin"
-import { existsSync, unlinkSync, readFileSync, writeFileSync, rmSync } from "fs"
-import { join } from "path"
-import { spawn } from "child_process"
-
-const SHIM_PATH = join(
-  process.env.HOME || "/tmp",
-  ".config/opencode/plugins/context-manager-loading-shim.ts"
-)
-const PLUGIN_NAME = "@madtech/opencode-context-manager-plugin"
-const BUN_CACHE = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/packages/@madtech/opencode-context-manager-plugin"
-)
-const BUN_CACHE_LATEST = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/packages/@madtech/opencode-context-manager-plugin@latest"
-)
-const VERSION_MARKER = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/.context-manager-version-check"
-)
-const PENDING_UPGRADE = join(
-  process.env.HOME || "/tmp",
-  ".cache/opencode/.context-manager-pending-upgrade"
-)
-const NPM_REGISTRY = "https://registry.npmjs.org/@madtech%2fopencode-context-manager-plugin/latest"
-
-const ShimPlugin: Plugin = async ({ client }) => {
-  const log = (level: string, message: string, extra?: Record<string, unknown>) =>
-    client?.app?.log({ body: { service: "context-manager-shim", level, message, extra } }).catch(() => {})
-
-  const toast = (title: string, message: string, variant: "info" | "success" | "warning" | "error" = "info", duration = 8000) => {
-    const tui = (client as any)?.tui
-    if (tui?.showToast) {
-      tui.showToast({ body: { title, message, variant, duration } }).catch(() => {})
-    } else if (tui?.publish) {
-      tui.publish({ body: { type: "tui.toast.show", properties: { title, message, variant, duration } } }).catch(() => {})
-    } else if (tui?.appendPrompt) {
-      tui.appendPrompt({ body: { text: \`[\${title}] \${message}\` } }).catch(() => {})
-    }
-  }
-
-  const selfDestruct = () => {
-    try {
-      unlinkSync(SHIM_PATH)
-      log("info", "shim self-deleted (plugin not configured)")
-    } catch (e) {
-      log("warn", "shim self-delete failed", { error: String(e) })
-    }
-  }
-
-  let pluginEnabled = false
-  try {
-    const cfg = await client.config.get()
-    pluginEnabled = Array.isArray(cfg?.plugin) && cfg.plugin.some((p: string) => p.includes(PLUGIN_NAME))
-  } catch (e) {
-    log("warn", "config.get failed; assuming plugin not enabled", { error: String(e) })
-  }
-
-  if (!pluginEnabled) {
-    log("info", "main plugin not in config; removing shim")
-    selfDestruct()
-    return {}
-  }
-
-  const cached = existsSync(BUN_CACHE) || existsSync(BUN_CACHE_LATEST)
-
-  // ponytail: if pending-upgrade marker exists, launch a detached process that
-  // deletes the bun cache after 2s (gives opencode time to load plugin code into memory).
-  // The process survives opencode's exit; unref() prevents opencode from waiting on it.
-  if (existsSync(PENDING_UPGRADE)) {
-    log("info", "pending-upgrade marker found; scheduling cache deletion")
-    toast("Context Manager", "Applying update… restart opencode to complete.", "info", 15000)
-    try {
-      const cmd = \`sleep 2 && rm -rf "\${BUN_CACHE}" "\${BUN_CACHE_LATEST}" "\${PENDING_UPGRADE}"\`
-      const child = spawn("sh", ["-c", cmd], { detached: true, stdio: "ignore" })
-      child.unref()
-      log("info", "detached cache-deletion process spawned", { pid: child.pid })
-    } catch (e) {
-      log("warn", "failed to spawn cache-deletion process", { error: String(e) })
-      try { rmSync(PENDING_UPGRADE, { force: true }) } catch {}
-    }
-    return {}
-  }
-
-  // When installed from local source there is no bun cache. Show a startup toast
-  // and let the main plugin (loaded by opencode from ~/.config/opencode/plugins/)
-  // do the real work.
-  log("info", "shim loaded — context-manager plugin active")
-  toast("Context Manager", "Indexing codebase in background…", "info", 15000)
-
-  if (!cached) {
-    log("info", "no npm cache — local-source install assumed")
-    return {}
-  }
-
-  // ponytail: version-check is read-only — never deletes cache while opencode is running.
-  // Throttled to once/day via a marker file containing ISO date.
-  // Marker is written BEFORE the fetch so throttle works even if fetch fails.
-  setImmediate(() => {
-    (async () => {
-      try {
-        const today = new Date().toISOString().slice(0, 10)
-        if (existsSync(VERSION_MARKER)) {
-          const last = readFileSync(VERSION_MARKER, "utf8").trim()
-          if (last === today) {
-            log("debug", "version-check already done today", { last })
-            return
-          }
-        }
-        writeFileSync(VERSION_MARKER, today, "utf8")
-
-        const cacheDir = existsSync(BUN_CACHE_LATEST) ? BUN_CACHE_LATEST : BUN_CACHE
-        const pkgPath = join(cacheDir, "node_modules", "@madtech", "opencode-context-manager-plugin", "package.json")
-        if (!existsSync(pkgPath)) {
-          log("warn", "cached package.json not found; skipping version-check", { pkgPath })
-          return
-        }
-        const localPkg = JSON.parse(readFileSync(pkgPath, "utf8"))
-        const localVersion = localPkg.version
-
-        // Promise.race with timeout — more reliable than AbortController in plugin context
-        let remoteVersion: string | null = null
-        try {
-          const res = await Promise.race([
-            fetch(NPM_REGISTRY),
-            new Promise<Response | null>(r => setTimeout(() => r(null), 3000)),
-          ])
-          if (res && res.ok) {
-            const remotePkg = await res.json()
-            remoteVersion = (remotePkg as any)?.version ?? null
-          }
-        } catch (e) {
-          log("warn", "npm fetch failed", { error: String(e) })
-        }
-
-        if (!remoteVersion) {
-          log("warn", "could not fetch remote version")
-          return
-        }
-
-        if (localVersion === remoteVersion) {
-          log("info", "plugin up to date", { local: localVersion, remote: remoteVersion })
-          return
-        }
-
-        log("info", "new version available; writing pending-upgrade marker", { local: localVersion, remote: remoteVersion })
-        writeFileSync(PENDING_UPGRADE, remoteVersion, "utf8")
-        toast("Context Manager", \`Update \${remoteVersion} available (have \${localVersion}). Restart opencode to apply.\`, "warning", 30000)
-      } catch (e) {
-        log("warn", "version-check failed", { error: String(e) })
-      }
-    })()
-  })
-
-  return {}
-}
-
-export default ShimPlugin`
-
-async function ensureShimInstalled(HOME: string, client: any, log: LogFn) {
-  const shimDir = join(HOME, ".config/opencode/plugins")
-  const shimPath = join(shimDir, "context-manager-loading-shim.ts")
-  try {
-    if (!existsSync(shimDir)) mkdirSync(shimDir, { recursive: true })
-
-    let stillConfigured = true
-    try {
-      const cfg = await Promise.race([
-        client?.config?.get?.(),
-        new Promise<null>(r => setTimeout(() => r(null), 2000)),
-      ])
-      if (cfg) {
-        const plugins = (cfg as any)?.plugin
-        stillConfigured = Array.isArray(plugins) && plugins.some((p: string) => p.includes("@madtech/opencode-context-manager-plugin"))
-      }
-    } catch {}
-
-    if (!stillConfigured) {
-      if (existsSync(shimPath)) {
-        try { unlinkSync(shimPath); log("info", "shim removed (plugin no longer in config)") } catch {}
-      }
-      return
-    }
-
-    if (existsSync(shimPath)) {
-      const existing = readFileSync(shimPath, "utf-8")
-      if (existing === SHIM_SOURCE) return
-    }
-    writeFileSync(shimPath, SHIM_SOURCE, "utf-8")
-    log("info", "shim auto-installed", { file: shimPath })
-  } catch (e) {
-    log("warn", "shim auto-install failed", { error: String(e) })
-  }
-}
+import { startDashboard, stopDashboard, getDashboardState, registerProjectDb } from "./dashboard"
+import { registerProject, getProject, getRecentCompressionEvents, projectId as getProjId } from "./registry"
+import { getTokenizer } from "./tokens"
+import { detectInterceptCandidate, tryInterceptOutput, type InterceptCandidate } from "./intercept"
+import { ToolOutputCache } from "./cache"
+import { ConversationContext } from "./context"
 
 const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
   const log: LogFn = (level, message, extra) =>
@@ -221,117 +30,196 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
 
   const HOME = process.env.HOME || "/tmp"
   const dbDir = join(HOME, ".cache/opencode")
-  const dbPath = join(dbDir, "context-manager.sqlite")
-  const oldJsonPath = join(dbDir, "context-manager.json")
 
+  const isServeMode = process.argv.includes("serve")
+
+  // Multi-project state
+  const projects = new Map<string, { db: Database; projId: string; ready: boolean }>()
+  const sessionDir = new Map<string, string>() // sessionID → directory
+  const accessOrder: string[] = []
+  const MAX_PROJECTS = 8
+
+  // Primary (first) project — used as default in TUI mode
   let db: Database | null = null
   let ready = false
-  const state = { get db() { return db }, get ready() { return ready } }
+  let projId: string = ""
+  const state = { get db() { return db }, get ready() { return ready }, get projId() { return projId } }
 
-  log("info", "plugin initialized", { directory })
+  // Worker helper for off-thread indexing
+  async function indexInWorker(root: string, maxFiles: number): Promise<ReturnType<typeof indexProject> | null> {
+    try {
+      const worker = new Worker(new URL("../plugins/worker-indexer.ts", import.meta.url))
+      const p = new Promise<any>((resolve, reject) => {
+        worker.onmessage = (e) => { resolve(e.data); worker.terminate() }
+        worker.onerror = (e) => { reject(e); worker.terminate() }
+      })
+      worker.postMessage({ root, maxFiles })
+      const result = await p
+      if (!result.ok) { log("warn", "worker index failed", { error: result.error }); return null }
+      return result
+    } catch (e) {
+      log("warn", "worker index failed, falling back to sync", { error: String(e) })
+      return indexProject(root, maxFiles)
+    }
+  }
+
+  // Helpers for project resolution
+  function touchLRU(dir: string) {
+    const idx = accessOrder.indexOf(dir)
+    if (idx > 0) { accessOrder.splice(idx, 1); accessOrder.unshift(dir) }
+    else if (idx === -1) { accessOrder.unshift(dir); if (accessOrder.length > MAX_PROJECTS) { const evicted = accessOrder.pop()!; const p = projects.get(evicted); if (p) { try { p.db.close() } catch {}; projects.delete(evicted) } } }
+  }
+
+  function projectForDir(dir: string): { db: Database; projId: string; ready: boolean } | null {
+    const p = projects.get(dir)
+    if (p) touchLRU(dir)
+    return p ?? null
+  }
+
+  function projectForSession(sid: string | undefined | null): { db: Database; projId: string; ready: boolean } | null {
+    if (!sid) return null
+    const dir = sessionDir.get(sid)
+    return dir ? projectForDir(dir) : null
+  }
+
+  function projectFromCtx(ctx: { sessionID?: string; directory?: string }): { db: Database; projId: string; ready: boolean } | null {
+    return projectForSession(ctx.sessionID) || projectForDir(ctx.directory || "") || null
+  }
+
+  // Resolve tokenizer eagerly so the first real call is fast.  If
+  // gpt-tokenizer isn't installed we silently fall back to the heuristic.
+  const tokenizer = getTokenizer()
+  log("info", "plugin initialized", { directory, tokenizer: tokenizer.mode, mode: isServeMode ? "serve" : "tui" })
+
+  function readFileSyncSafe(p: string): string { try { return readFileSync(p, "utf8") } catch { return "" } }
+
+  async function ensureProject(dir: string, doIndex = true, logFn = log): Promise<{ db: Database; projId: string; ready: boolean }> {
+    const existing = projects.get(dir)
+    if (existing) return existing
+
+    if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
+
+    const projInfo = registerProject(dir)
+    const newDb = new Database(projInfo.dbPath)
+    initSchema(newDb)
+
+    const currentSchemaVersion = dbGetSchemaVersion(newDb)
+    if (currentSchemaVersion < SCHEMA_VERSION) {
+      logFn("info", "schema version mismatch; clearing index for reindex", { current: currentSchemaVersion, target: SCHEMA_VERSION })
+      dbClear(newDb)
+      dbSetSchemaVersion(newDb, SCHEMA_VERSION)
+      logFn("info", "index schema updated; reindexing project")
+    }
+
+    registerProjectDb(projInfo.id, newDb)
+
+    const skillDstDir = join(HOME, ".config/opencode/skills/context-manager")
+    const skillDst = join(skillDstDir, "SKILL.md")
+    const skillSrc = join(import.meta.dir, "..", "skills", "context-manager", "SKILL.md")
+    if (existsSync(skillSrc)) {
+      try {
+        if (!existsSync(skillDstDir)) mkdirSync(skillDstDir, { recursive: true })
+        if (!existsSync(skillDst) || readFileSync(skillSrc, "utf8") !== readFileSyncSafe(skillDst)) {
+          copyFileSync(skillSrc, skillDst)
+          logFn("info", "skill installed/updated", { file: skillDst })
+        }
+      } catch (e) {
+        logFn("warn", "skill auto-install failed", { error: String(e) })
+      }
+    }
+
+    const entry = { db: newDb, projId: projInfo.id, ready: true }
+    projects.set(dir, entry)
+    touchLRU(dir)
+
+    // Defer indexing so the TUI can finish booting.
+    if (doIndex) {
+      setTimeout(async () => {
+        if (entry.db !== projects.get(dir)?.db) return
+        const maxFiles = getMaxFiles()
+        log("info", "auto-indexing project (background)", { directory: dir, maxFiles })
+        const result = await indexInWorker(dir, maxFiles)
+        if (!result) { log("warn", "auto-index returned no results"); return }
+        const { files: nfiles, chunks, fileHashes, edges, capped } = result
+        if (chunks.length === 0) {
+          log("warn", "no code files found in this directory")
+        } else if (capped) {
+          log("warn", "index capped", { files: nfiles, chunks: chunks.length })
+        } else {
+          log("info", "index ready", { files: nfiles, chunks: chunks.length })
+        }
+        dbClear(entry.db)
+        dbInsertChunks(entry.db, chunks)
+        dbInsertEdges(entry.db, edges || [])
+        for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(entry.db, fp, h)
+        dbSetMeta(entry.db, "projectRoot", dir)
+        dbSetMeta(entry.db, "indexedAt", new Date().toISOString())
+        entry.ready = true
+      }, 100)
+    }
+
+    return entry
+  }
+
+  async function ensureIndexed(ps: { db: Database; projId: string }, root: string): Promise<void> {
+    if (dbChunkCount(ps.db) > 0) return
+    log("info", "on-demand indexing", { directory: root })
+    const result = await indexInWorker(root, getMaxFiles())
+    if (!result) return
+    const { chunks, fileHashes, edges } = result
+    dbClear(ps.db)
+    dbInsertChunks(ps.db, chunks)
+    dbInsertEdges(ps.db, edges)
+    for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(ps.db, fp, h)
+    dbSetMeta(ps.db, "projectRoot", root)
+    dbSetMeta(ps.db, "indexedAt", new Date().toISOString())
+  }
 
   setImmediate(() => {
     (async () => {
       try {
-        await ensureShimInstalled(HOME, client, log)
-        if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
-      if (existsSync(oldJsonPath)) { try { unlinkSync(oldJsonPath) } catch {} }
-
-      db = new Database(dbPath)
-      initSchema(db)
-
-      const currentSchemaVersion = dbGetSchemaVersion(db)
-      if (currentSchemaVersion < SCHEMA_VERSION) {
-        log("info", "schema version mismatch; clearing index for reindex", { current: currentSchemaVersion, target: SCHEMA_VERSION })
-        dbClear(db)
-        dbSetSchemaVersion(db, SCHEMA_VERSION)
-        log("info", "index schema updated; reindexing project")
-      }
-
-      const skillDstDir = join(HOME, ".config/opencode/skills/context-manager")
-      const skillDst = join(skillDstDir, "SKILL.md")
-      if (!existsSync(skillDst)) {
-        const skillSrc = join(import.meta.dir, "..", "skills", "context-manager", "SKILL.md")
-        if (existsSync(skillSrc)) {
-          try {
-            mkdirSync(skillDstDir, { recursive: true })
-            copyFileSync(skillSrc, skillDst)
-            log("info", "skill auto-installed", { file: skillDst })
-          } catch (e) {
-            log("warn", "skill auto-install failed", { error: String(e) })
-          }
-        }
-      }
-
-      if (db && dbChunkCount(db) === 0) {
-        const maxFiles = getMaxFiles()
-        log("info", "auto-indexing project in worker (background)", { directory, maxFiles })
-        const workerPath = join(import.meta.dir, "worker-indexer.ts")
-        try {
-          const worker = new Worker(workerPath, { type: "module" })
-          worker.postMessage({ root: directory, maxFiles })
-          worker.onmessage = (e: MessageEvent<{ files: number; chunks: any[]; fileHashes: Record<string, string>; edges: any[]; capped: boolean }>) => {
-            try {
-              if (!db) return
-              const { files, chunks, fileHashes, edges, capped } = e.data
-              if (chunks.length === 0) {
-                log("warn", "no code files found in this directory")
-              } else if (capped) {
-                log("warn", "index capped", { files, chunks: chunks.length })
-              } else {
-                log("info", "index ready", { files, chunks: chunks.length })
-              }
-              dbInsertChunks(db, chunks)
-              dbInsertEdges(db, edges || [])
-              for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(db, fp, h)
-              dbSetMeta(db, "projectRoot", directory)
-              dbSetMeta(db, "indexedAt", new Date().toISOString())
-              log("info", "auto-indexed project", { files, chunks: chunks.length, edges: (edges || []).length, capped })
-              ready = true
-              worker.terminate()
-            } catch (err) {
-              log("error", "failed to save auto-index", { error: String(err) })
-              ready = true
-              worker.terminate()
-            }
-          }
-          worker.onerror = (err) => {
-            log("error", "index worker failed", { error: String(err) })
-            ready = true
-            worker.terminate()
-          }
-        } catch (e) {
-          log("error", "could not start index worker", { error: String(e) })
+        // In TUI mode, auto-index the primary project on startup.
+        // In serve mode, skip — index on session.created instead.
+        if (!isServeMode) {
+          setProjectContext(directory)
+          const primary = await ensureProject(directory, false, log)
+          db = primary.db
+          projId = primary.projId
+          registerProject(directory)
+          ready = primary.ready
+        } else {
           ready = true
         }
-      } else {
-        ready = true
-      }
 
-      // Start local dashboard (localhost-only) only when explicitly enabled.
-      // Auto-starting a Bun.serve() during plugin init has caused TUI boot hangs
-      // in some opencode versions, so it is now opt-in via env/context_dashboard.
-      if (process.env.CONTEXT_MANAGER_DASHBOARD_AUTO_START === "1") {
-        setTimeout(() => {
-          if (!db) return
+      // Start dashboard (multiplexer serves all projects)
+      if (process.env.CONTEXT_MANAGER_DASHBOARD_AUTO_START !== "0") {
+        setTimeout(async () => {
+          if (!db && projects.size === 0) return
           try {
-            const dash = startDashboard(db)
+            const dash = await startDashboard(db || undefined, undefined, projId || undefined)
             if (dash.ready) {
-              log("info", "dashboard running", { url: dash.url })
+              log("info", "dashboard running", { url: dash.url, project: isServeMode ? "serve (multi-project)" : registerProject(directory).name })
             } else {
               log("warn", "dashboard failed to start", { error: dash.error })
             }
           } catch (e) {
             log("warn", "dashboard start error", { error: String(e) })
           }
-        }, 2000)
+        }, 200)
       }
+
     } catch (e) {
       log("error", "plugin init failed", { error: String(e) })
       ready = true
     }
     })()
   })
+
+  // Map callID → { resolvedPath, cmd, interceptCandidate } for use in tool.execute.after
+  const toolCalls = new Map<string, { resolvedPath: string; cmd: string; candidate?: InterceptCandidate }>()
+  const editedFilesThisSession = new Set<string>()
+  const toolOutputCache = new ToolOutputCache()
+  const conversationContext = new ConversationContext()
 
   return {
     tool: {
@@ -341,15 +229,19 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           path: tool.schema.string().optional().describe("Project path. Default: current session directory."),
         },
         async execute(args, c) {
-          if (!state.db) return "Plugin still initializing. Try again in a second."
           const root = args.path ? (isAbsolute(args.path) ? args.path : join(c.directory, args.path)) : c.directory
+          let ps = projectForDir(root)
+          if (!ps) ps = await ensureProject(root, false, log)
+          if (!ps?.db) return "Plugin still initializing. Try again in a second."
+          const sid = c.sessionID
           const { files, chunks, fileHashes, edges, capped } = indexProject(root)
-          dbClear(state.db)
-          dbInsertChunks(state.db, chunks)
-          dbInsertEdges(state.db, edges)
-          for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(state.db, fp, h)
-          dbSetMeta(state.db, "projectRoot", root)
-          dbSetMeta(state.db, "indexedAt", new Date().toISOString())
+          dbClear(ps.db)
+          dbInsertChunks(ps.db, chunks)
+          dbInsertEdges(ps.db, edges)
+          for (const [fp, h] of Object.entries(fileHashes)) dbSetFileHash(ps.db, fp, h)
+          dbSetMeta(ps.db, "projectRoot", root)
+          dbSetMeta(ps.db, "indexedAt", new Date().toISOString())
+          recordSearch(sid, `context_analyze ${root}`, true)
           log("info", "indexed project", { files, chunks: chunks.length, edges: edges.length, root, capped })
           if (capped) {
             log("warn", "index capped", { files, chunks: chunks.length })
@@ -372,26 +264,25 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           return [
             `Indexed ${files} files → ${chunks.length} chunks`,
             capped ? `  ⚠ hit file cap (${files} files) — pass a narrower path` : null,
-            `  functions:  ${fns}`,
-            `  classes:    ${cls}`,
-            `  interfaces: ${ifs}`,
-            `  types:      ${types}`,
-            `  enums:      ${enums}`,
-            `  imports:    ${imp}`,
-            `  exports:    ${exp}`,
-            `  decorators: ${dec}`,
-            `  selectors:  ${sel}`,
-            `  components: ${cmp}`,
-            `  config:     ${cfg}`,
-            `  tables:     ${tbl}`,
-            `  headings:   ${hdg}`,
-            `  edges:      ${dbEdgeCount(state.db)}`,
-            `  DB: ${dbPath}`,
+            `  Functions: ${fns}`,
+            `  Classes:   ${cls}`,
+            `  Interfaces: ${ifs}`,
+            `  Types:     ${types}`,
+            `  Enums:     ${enums}`,
+            `  Imports:   ${imp}`,
+            `  Exports:   ${exp}`,
+            `  Decorators: ${dec}`,
+            `  CSS selectors: ${sel}`,
+            `  Components: ${cmp}`,
+            `  Config:    ${cfg}`,
+            `  Tables:    ${tbl}`,
+            `  Headings:  ${hdg}`,
+            chunks.length > 0 ? `  DB: ${registerProject(root).dbPath}` : null,
           ].filter(Boolean).join("\n")
         },
       }),
       context_search: tool({
-        description: "Search indexed code by keyword. Prefer this over reading files blindly. Supports filters like class:User, function:auth, file:auth.ts, lang:ts. Returns symbol name with file range and a snippet of the body.",
+        description: "Search indexed code by keyword. This is the PRIMARY code search tool — always use it over native grep/rg/find/git-grep. Covers all code exploration: find definitions, usages, references, symbols, classes, functions, files by extension, and more. Supports filters like class:User, function:auth, file:auth.ts, lang:ts. Returns symbol name with file range and body snippet. Faster and uses far fewer tokens than native tools.",
         args: {
           query: tool.schema.string().describe("Search query (e.g. 'auth handler', 'validate function', 'class:User')"),
           n: tool.schema.number().optional().default(10).describe("Max results (default 10)"),
@@ -399,18 +290,34 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           snippet: tool.schema.number().optional().default(20).describe("Max lines of body to show per result (0 = no snippet)."),
         },
         async execute(args, c) {
-          const db = state.db
-          if (!db) return "Plugin still initializing. Try again in a second."
-          if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
+          const ps = projectFromCtx(c)
+          if (!ps?.db) return "Plugin still initializing. Try again in a second."
+          if (dbChunkCount(ps.db) === 0) await ensureIndexed(ps, c.directory || "")
+          if (dbChunkCount(ps.db) === 0) return "No code files found in this directory."
           if (args.query.trim().length < 2) return "Query too short. Use at least 2 characters."
+          const sid = c.sessionID
           const limit = args.n || 10
-          const results = search(db, args.query, limit)
+          const results = search(ps.db, args.query, limit)
           if (!results.length) return "No matches found."
-          const projectRoot = dbGetMeta(db, "projectRoot") || ""
+          const projectRoot = dbGetMeta(ps.db, "projectRoot") || ""
           const isCompact = args.compact ?? limit > 5
           const snippetLines = args.snippet ?? (isCompact ? 0 : 20)
           const usedSnippet = !isCompact && snippetLines > 0 && results.some(r => r.body)
-          recordSearch((c as any)?.sessionID, args.query, usedSnippet)
+          recordSearch(sid, args.query, usedSnippet)
+          // Measure search savings: compare snippet size vs full file size
+          if (usedSnippet) {
+            let snippetChars = 0
+            let fileChars = 0
+            for (const r of results) {
+              snippetChars += (r.body || "").length + (r.content || "").length
+              try {
+                if (r.file && existsSync(r.file)) fileChars += statSync(r.file).size
+              } catch {}
+            }
+            if (fileChars > snippetChars) {
+              recordSearchSavings(sid, fileChars - snippetChars)
+            }
+          }
           return formatSearchResults(results, projectRoot, {
             compact: isCompact,
             snippetLines,
@@ -421,26 +328,46 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
         description: "Show index stats: project root, timestamp, chunk counts by language, context fill %.",
         args: {},
         async execute(args, c) {
-          if (!state.db) return "Plugin still initializing. Try again in a second."
-          const count = dbChunkCount(state.db)
+          const ps = projectFromCtx(c)
+          if (!ps?.db) return "Plugin still initializing. Try again in a second."
+          const count = dbChunkCount(ps.db)
           if (!count) return "No index. Run context_analyze first."
-          const byLang = dbStatsByLang(state.db)
-          const sid = (c as any)?.sessionID
+          const byLang = dbStatsByLang(ps.db)
+          const sid = c.sessionID
           const fill = getFillRatio(sid)
           const usage = getUsage(sid)
           const lines = [
-            `Project: ${dbGetMeta(state.db, "projectRoot")}`,
-            `Indexed: ${dbGetMeta(state.db, "indexedAt")}`,
+            `Project: ${dbGetMeta(ps.db, "projectRoot")}`,
+            `Indexed: ${dbGetMeta(ps.db, "indexedAt")}`,
             `Total:   ${count} chunks`,
           ]
           for (const { ext, n } of byLang)
             lines.push(`  ${ext}: ${n}`)
-          lines.push(`Files:   ${dbFileCount(state.db)}`)
+          lines.push(`Files:   ${dbFileCount(ps.db)}`)
+          const writeCompress = process.env.CONTEXT_MANAGER_COMPRESS_WRITES === "1"
+          const outputCompress = process.env.CONTEXT_MANAGER_COMPRESS_OUTPUT === "1"
+          const interceptMode = process.env.CONTEXT_MANAGER_INTERCEPT_MODE || "substitute"
+          lines.push(`Compression: writes=${writeCompress ? "on" : "off"} output=${outputCompress ? "on" : "off"} intercept=${interceptMode}`)
+          const measured = measuredSavings(usage)
+          const denom = (usage.searchQueries || 0) + (usage.nativeSearches || 0) + (usage.filesRead || 0) + (usage.indexSubstitutions || 0) + (usage.cacheHits || 0)
+          const efficiency = denom > 0 ? (((usage.indexSubstitutions || 0) + (usage.cacheHits || 0) + (usage.toolsIntercepted || 0)) / denom) : 0
           lines.push(`Context fill: ${(fill * 100).toFixed(0)}%`)
+          lines.push(`Efficiency ratio: ${(efficiency * 100).toFixed(0)}%`)
           lines.push(`Searches this session: ${usage.searchQueries || 0}`)
           lines.push(`Snippet-only answers: ${usage.snippetsUsed || 0}`)
           lines.push(`Files read via search: ${usage.filesRead || 0}`)
-          lines.push(`Estimated tokens saved: ~${estimateSavings(usage).toLocaleString()}`)
+          lines.push(`Index substitutions: ${usage.indexSubstitutions || 0}`)
+          lines.push(`Index misses: ${usage.indexMissed || 0}`)
+          lines.push(`Cache hits: ${usage.cacheHits || 0}`)
+          lines.push(`Compactions: ${(usage.compactions || 0) + getCompactionCount()}`)
+          lines.push(`Tokens saved by compression: ~${(usage.compressionSaved || 0).toLocaleString()}`)
+          lines.push(`Tokens saved by semantic compression: ~${(usage.semanticCompressionSaved || 0).toLocaleString()}`)
+          lines.push(`Tokens saved by search snippets: ~${(usage.searchSaved || 0).toLocaleString()}`)
+          lines.push(`Tokens saved by index substitution: ~${(usage.indexSavedTokens || 0).toLocaleString()}`)
+          lines.push(`Tokens saved by generative compression: ~${(usage.generativeCompressionSaved || 0).toLocaleString()}`)
+          lines.push(`Tokens saved by output compression: ~${(usage.outputCompressionSaved || 0).toLocaleString()}`)
+          lines.push(`Total tokens saved: ~${measured.toLocaleString()} (compression + semantic + search + index + generative + output)`)
+          lines.push(`Avg tokens saved per search: ~${(usage.searchQueries || 0) > 0 ? Math.round(measured / (usage.searchQueries || 1)).toLocaleString() : "0"}`)
           return lines.join("\n")
         },
       }),
@@ -450,14 +377,15 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           symbol: tool.schema.string().describe("Symbol to trace, e.g. 'src/auth.ts:authenticate' or just 'authenticate' (best-effort match)."),
           n: tool.schema.number().optional().default(10).describe("Max related symbols to return."),
         },
-        async execute(args) {
-          const db = state.db
-          if (!db) return "Plugin still initializing. Try again in a second."
-          if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
-          const projectRoot = dbGetMeta(db, "projectRoot") || ""
+        async execute(args, c) {
+          const ps = projectFromCtx(c)
+          if (!ps?.db) return "Plugin still initializing. Try again in a second."
+          if (dbChunkCount(ps.db) === 0) await ensureIndexed(ps, c.directory || "")
+          if (dbChunkCount(ps.db) === 0) return "No code files found in this directory."
+          const projectRoot = dbGetMeta(ps.db, "projectRoot") || ""
           const parsed = parseSymbolRef(args.symbol, projectRoot)
           if (!parsed) return "Could not parse symbol reference. Use format: file.ts:symbolName."
-          const related = dbFindRelated(db, parsed.file, parsed.name)
+          const related = dbFindRelated(ps.db, parsed.file, parsed.name)
           if (!related.length) return `No relations found for ${parsed.name}.`
           const limit = args.n || 10
           return related.slice(0, limit).map(r => {
@@ -474,15 +402,16 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
           n: tool.schema.number().optional().default(10).describe("Max impacted files to return."),
         },
         async execute(args, c) {
-          const db = state.db
-          if (!db) return "Plugin still initializing. Try again in a second."
-          if (dbChunkCount(db) === 0) return "No index. Run context_analyze first."
-          const projectRoot = dbGetMeta(db, "projectRoot") || c.directory
+          const ps = projectFromCtx(c)
+          if (!ps?.db) return "Plugin still initializing. Try again in a second."
+          if (dbChunkCount(ps.db) === 0) await ensureIndexed(ps, c.directory || "")
+          if (dbChunkCount(ps.db) === 0) return "No code files found in this directory."
+          const projectRoot = dbGetMeta(ps.db, "projectRoot") || c.directory
           const files = args.files.map(f => isAbsolute(f) ? f : join(projectRoot, f))
-          const impacted = dbFindImpacted(db, files)
+          const impacted = dbFindImpacted(ps.db, files)
           if (!impacted.length) return "No dependent files found for the given files."
           const limit = args.n || 10
-          const projectRootMeta = dbGetMeta(db, "projectRoot") || ""
+          const projectRootMeta = dbGetMeta(ps.db, "projectRoot") || ""
           const grouped: Record<string, string[]> = {}
           for (const r of impacted.slice(0, limit)) {
             const dep = relative(projectRootMeta, r.dependent) || r.dependent
@@ -496,50 +425,197 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
       context_clear: tool({
         description: "Delete the local code index.",
         args: {},
-        async execute() {
-          if (!state.db) return "Plugin still initializing. Try again in a second."
-          dbClear(state.db)
+        async execute(args, c) {
+          const ps = projectFromCtx(c)
+          if (!ps?.db) return "Plugin still initializing. Try again in a second."
+          dbClear(ps.db)
           return "Index cleared."
         },
       }),
       context_dashboard: tool({
-        description: "Open the Context Manager web dashboard in your browser. Shows live index stats, token savings, hot files, and recent searches. Set CONTEXT_MANAGER_DASHBOARD_AUTO_START=1 to start it automatically on opencode launch.",
+        description: "Open the Context Manager web dashboard. The dashboard runs as a standalone React app connecting via WebSocket to the plugin on port 3567. Shows live multi-project stats, charts, and search. Auto-starts on opencode launch unless CONTEXT_MANAGER_DASHBOARD_AUTO_START=0.",
         args: {},
         async execute(args, c) {
-          const db = state.db
+          const ps = projectFromCtx(c)
+          const db = ps?.db || state.db
           if (!db) return "Plugin still initializing. Try again in a second."
+          const sid = c.sessionID
           let dash = getDashboardState()
           if (!dash.ready) {
-            dash = startDashboard(db, (c as any)?.sessionID)
+            dash = await startDashboard(db, sid)
           }
-          if (!dash.ready) return `Dashboard failed to start: ${dash.error || "unknown error"}`
-          return `Context Manager dashboard: ${dash.url} (localhost only)`
+          recordSearch(sid, "context_dashboard", true)
+          if (!dash.ready) return `Dashboard server failed: ${dash.error || "unknown error"}`
+          return `Context Manager WebSocket server: ${dash.url}/ws — connect the dashboard app to this URL. API: ${dash.url}/api/projects, ${dash.url}/api/aggregate`
+        },
+      }),
+      context_compression: tool({
+        description: "Show real-time compression status and diagnostics. Reports which compression modes are active, session tokens saved, recent events, and runs a self-test.",
+        args: {},
+        async execute(_args, c) {
+          const sid = (c as any)?.sessionID
+          const usage = getUsage(sid)
+          const measured = measuredSavings(usage)
+
+          const writeCompress = process.env.CONTEXT_MANAGER_COMPRESS_WRITES === "1"
+          const outputCompress = process.env.CONTEXT_MANAGER_COMPRESS_OUTPUT === "1"
+          const writeThreshold = process.env.CONTEXT_MANAGER_COMPRESS_WRITES_THRESHOLD || "1000"
+          const outputThreshold = process.env.CONTEXT_MANAGER_COMPRESS_OUTPUT_THRESHOLD || "500"
+          const interceptMode = process.env.CONTEXT_MANAGER_INTERCEPT_MODE || "substitute"
+
+          const recent = getRecentCompressionEvents(5)
+
+          // Self-test: compress + decompress a small text
+          const testText = "x".repeat(100)
+          const { base64 } = compressGenerativeOutput(testText)
+          const wrapped = wrapCompressedOutput("self-test", base64)
+          const decompressed = tryDecompressGenerativeOutput(wrapped)
+          const selfTestOk = decompressed?.content === testText
+
+          const lines = [
+            "Compression Status",
+            "━━━━━━━━━━━━━━━━━",
+            "",
+            "Configuration:",
+            `  Write compression (CONTEXT_MANAGER_COMPRESS_WRITES): ${writeCompress ? "ON" : "off"}`,
+            `  Write threshold: ${writeThreshold} chars`,
+            `  Output compression (CONTEXT_MANAGER_COMPRESS_OUTPUT): ${outputCompress ? "ON" : "off"}`,
+            `  Output threshold: ${outputThreshold} chars`,
+            `  Intercept mode: ${interceptMode}`,
+            "",
+            "Session stats:",
+            `  Generative compression saved: ~${(usage.generativeCompressionSaved || 0).toLocaleString()} tokens`,
+            `  Output compression saved: ~${(usage.outputCompressionSaved || 0).toLocaleString()} tokens`,
+            `  Total session savings: ~${measured.toLocaleString()} tokens`,
+            "",
+            `Self-test: compress + decompress 100 chars`,
+            `  Result: ${selfTestOk ? "✅ working" : "❌ failed"} (${testText.length} → ${base64.length} chars)`,
+          ]
+
+          if (recent.length > 0) {
+            lines.push("", "Recent events:")
+            for (const e of recent) {
+              const label = e.eventType === "generative_compression" ? "Write" : "Output"
+              const age = Math.round((Date.now() - e.ts) / 1000)
+              lines.push(`  ${label}: saved ~${e.tokensSaved} tokens (${age}s ago)`)
+            }
+          }
+
+          return lines.join("\n")
         },
       }),
     },
     async event({ event }) {
-      if (!state.db) return
+      try {
       const props = event.properties as any
-      if (event.type === "message.updated" && props?.tokens) {
-        const t = props.tokens as { input?: number; output?: number }
-        recordTokens(props.sessionID, t.input || 0, t.output || 0)
+
+      // session.created — register session-to-dir mapping and ensure project
+      if (event.type === "session.created" && props?.info) {
+        const dir = (props.info as any).directory
+        const sid = (props.info as any).id
+        if (dir && sid) {
+          sessionDir.set(sid, dir)
+          if (!projects.has(dir)) {
+            ensureProject(dir, false, log).catch(e => log("error", "on-demand project init failed", { error: String(e) }))
+          }
+        }
+        return
+      }
+
+      // Resolve the project DB for this event; fall back to primary project
+      const eventDb = (() => {
+        if (event.type === "message.updated" && props?.info) {
+          return projectForSession(props.info.sessionID)?.db || state.db
+        }
+        if (event.type === "message.part.updated" && props?.part) {
+          return projectForSession(props.part.sessionID)?.db || state.db
+        }
+        if (event.type === "file.edited" || event.type === "file.watcher.updated") {
+          const fp = props?.file || ""
+          // Find which project directory is a parent of this file
+          for (const [pdir] of projects) {
+            if (fp.startsWith(pdir + "/") || fp === pdir) return projects.get(pdir)!.db
+          }
+          return state.db
+        }
+        return state.db
+      })()
+
+      if (!eventDb) return
+
+      if (event.type === "message.updated" && props?.info?.tokens) {
+        const info = props.info as any
+        const t = info.tokens as { input?: number; output?: number }
+        recordTokens(info.sessionID, t.input || 0, t.output || 0)
       }
       if (event.type === "file.edited" && props?.file) {
-        debouncedUpdateFile(state.db, props.file, 500, log)
+        editedFilesThisSession.add(props.file)
+        debouncedUpdateFile(eventDb, props.file, 500, log)
       }
       if (event.type === "file.watcher.updated" && props?.file) {
         const fp = props.file
         const ev = props.event
         if (ev === "unlink") {
-          dbDeleteFile(state.db, fp)
+          dbDeleteFile(eventDb, fp)
           log("debug", "removed file from index", { file: fp })
         } else if (ev === "add" || ev === "change") {
-          debouncedUpdateFile(state.db, fp, 500, log)
+          debouncedUpdateFile(eventDb, fp, 500, log)
         }
       }
+      if (event.type === "message.part.updated" && props?.part) {
+        const part = props.part as any
+        if (part.type === "tool" && part.tool) {
+          const sid = part.sessionID
+          const toolName = part.tool
+          const st = part.state as { status?: string; input?: any; output?: string } | undefined
+          const input = st?.input || {}
+
+          // Extract filePath from input for project resolution
+          const filePath = input.filePath || input.path || input.file || ""
+          const cmd = input.command || input.cmd || input.script || (typeof input === "string" ? input : "")
+
+          // For bash, try to extract an absolute path from the command
+          let resolvedPath = filePath
+          if (!resolvedPath && cmd) {
+            const m = /\s(\/[^\s'"]+)/.exec(cmd)
+            if (m) resolvedPath = m[1]
+          }
+
+          // Store resolvedPath and cmd for this callID so tool.execute.after can use it
+          const callID = (part as any).callID || ""
+          if (callID) toolCalls.set(callID, { resolvedPath, cmd })
+
+          if (st?.status === "running") {
+            if (toolName === "read") {
+              recordFileRead(sid, resolvedPath)
+            } else if (["context_search", "context_related", "context_impact"].includes(toolName)) {
+              const query = input.query || input.symbol || input.files?.join(", ") || toolName
+              recordSearch(sid, query, true)
+            } else if (["context_analyze", "context_dashboard", "context_stats"].includes(toolName)) {
+              const query = input.path || input.query || toolName
+              recordSearch(sid, query, true)
+            } else if (["bash", "sh", "zsh", "fish", "shell"].includes(toolName)) {
+              if (/\b(grep|rg|find|fd)\b/i.test(cmd)) recordNativeSearch(sid, cmd.slice(0, 120), resolvedPath)
+              if (/\b(cat|head|tail|less|more|bat)\b/i.test(cmd)) {
+                log("info", "read detected in bash", { cmd: cmd.slice(0, 120), match: cmd.match(/\b(cat|head|tail|less|more|bat)\b/i)?.[0] })
+                recordFileRead(sid, resolvedPath)
+              }
+            }
+          }
+
+          // On completed: nothing — compression + intercept handled in tool.execute.after
+        }
+      }
+      } catch (e) {
+        log("error", "event handler failed", { error: String(e) })
+      }
     },
-    async "experimental.chat.system.transform"(_input, output) {
-      if (!state.db) {
+    async "experimental.chat.system.transform"(input, output) {
+      try {
+      const ps = projectForSession(input.sessionID)
+      const psDb = ps?.db || state.db
+      const psReady = ps?.ready ?? state.ready
+      if (!psDb) {
         output.system.push([
           "<context-manager>",
           "Status: plugin still initializing.",
@@ -548,33 +624,167 @@ const ContextManagerPlugin: Plugin = async ({ client, directory }) => {
         ].join("\n"))
         return
       }
-      const prompt = buildSystemPrompt(state.db, state.ready)
+      const prompt = buildSystemPrompt(psDb, psReady, editedFilesThisSession.size > 0)
       if (prompt) output.system.push(prompt)
+      } catch (e) {
+        log("error", "system.transform failed", { error: String(e) })
+      }
     },
     async "experimental.chat.messages.transform"(_input, output) {
+      try {
       const msgs = (output as { messages: { info: { role?: string; sessionID?: string }; parts: any[] }[] }).messages
       if (!Array.isArray(msgs) || msgs.length === 0) return
       const sid = msgs[0]?.info?.sessionID
-      const fill = getFillRatio(sid)
-      const n = compactMessages(msgs as any, fill)
-      if (n > 0) {
-        recordCompaction(sid)
-        log("info", "compacted old tool outputs", { count: n, fillRatio: fill })
+      const direction = (_input as { direction?: string })?.direction || "input"
+
+      if (direction === "input") {
+        const fill = getFillRatio(sid)
+        const { count: n } = compactMessages(msgs as any, fill)
+        if (n > 0) {
+          recordCompaction(sid)
+          log("info", "compacted old tool outputs", { count: n, fillRatio: fill })
+        }
+        // Capture user text for smart-read ranking.
+        for (const msg of msgs) {
+          if (msg.info?.role !== "user") continue
+          const text = msg.parts
+            .filter((p: any) => p.type === "text")
+            .map((p: any) => p.text)
+            .join(" ")
+          if (text) conversationContext.addUserText(text)
+        }
+
+        // Decompress all compressed messages (assistant writes + compressed history messages).
+        for (const msg of msgs) {
+          for (const part of msg.parts) {
+            if (part.type !== "text" || typeof part.text !== "string") continue
+            const decompressed = tryDecompressGenerativeOutput(part.text)
+            if (decompressed) {
+              part.text = decompressed.content
+            }
+          }
+        }
+      }
+
+      if (direction === "output") {
+        const outputOpts = getCompressOutputOptions()
+        if (outputOpts.enabled) {
+          for (const msg of msgs) {
+            if (!msg.info?.role) continue
+            for (const part of msg.parts) {
+              if (part.type !== "text" || typeof part.text !== "string") continue
+              if (shouldCompressOutputMessage(part.text, outputOpts.threshold)) {
+                const { wrapped, originalChars, compressedChars } = compressMessage(part.text, msg.info.role)
+                const saved = Math.max(0, originalChars - compressedChars)
+                recordOutputCompression(sid, saved, msg.info.role)
+                log("info", "compressed output message", { role: msg.info.role, originalChars, compressedChars, sessionID: sid })
+                part.text = wrapped
+              }
+            }
+          }
+        }
+      }
+      } catch (e) {
+        log("error", "messages.transform failed", { error: String(e) })
       }
     },
-    async "tool.execute.before"(input, _output) {
-      const t = (input as { tool: string }).tool
-      if (t === "read") {
-        recordFileRead((input as { sessionID: string }).sessionID)
+    async "tool.execute.before"(input, output) {
+      try {
+      const { tool: t, sessionID: sid, callID } = input as { tool: string; sessionID: string; callID: string }
+      const args = (output as { args: any }).args
+      log("info", "tool.execute.before", { tool: t, sessionID: sid, callID })
+      const ps = projectForSession(sid)
+      const psDb = ps?.db || state.db
+      const psDir = ps ? dbGetMeta(ps.db, "projectRoot") || "" : directory
+      if (!psDb) return
+      if (dbChunkCount(psDb) === 0) {
+        const root = dbGetMeta(psDb, "projectRoot") || psDir || directory
+        await ensureIndexed({ db: psDb, projId: ps?.projId || "" }, root)
+      }
+      if (dbChunkCount(psDb) === 0) return
+      const projectRoot = dbGetMeta(psDb, "projectRoot") || psDir || directory
+      const candidate = detectInterceptCandidate(psDb, projectRoot, t, args)
+      if (candidate) {
+        const existing = toolCalls.get(callID)
+        toolCalls.set(callID, {
+          resolvedPath: candidate.resolvedPath || existing?.resolvedPath || "",
+          cmd: existing?.cmd || "",
+          candidate,
+        })
+        log("info", "intercept candidate detected", { tool: t, reason: candidate.reason, substitutable: candidate.substitutable, sessionID: sid })
+      }
+      } catch (e) {
+        log("error", "tool.execute.before failed", { error: String(e) })
       }
     },
     async "tool.execute.after"(input, output) {
+      try {
       const t = (input as { tool?: string })?.tool || ""
-      if (!["read", "bash", "grep", "glob"].includes(t)) return
+      const sid = (input as { sessionID?: string })?.sessionID
+      const callID = (input as { callID?: string })?.callID || ""
+      log("info", "tool.execute.after", { tool: t, sessionID: sid })
+      const ps = projectForSession(sid)
+      const psDb = ps?.db || state.db
+      const psDir = ps ? dbGetMeta(ps.db, "projectRoot") || "" : directory
+      const callInfo = toolCalls.get(callID)
+      const resolvedPath = callInfo?.resolvedPath || ""
+      const cmd = callInfo?.cmd || ""
+      const candidate = callInfo?.candidate
+      const projectRoot = psDb ? dbGetMeta(psDb, "projectRoot") || psDir || directory : directory
+
+      // Try to replace the native output with a compact index substitute.
+      if (candidate && psDb) {
+        const cur = (output as { output?: string }).output
+        if (typeof cur === "string") {
+          const cached = toolOutputCache.get(t, candidate.args, resolvedPath ? dbGetFileHash(psDb, resolvedPath) || undefined : undefined)
+          let result: { replaced: boolean; output?: string; tokensSaved?: number; potentialSavings?: number; reason: string }
+          if (cached) {
+            result = { replaced: true, output: cached.output, tokensSaved: 0, potentialSavings: 0, reason: "cache hit" }
+          } else {
+            result = tryInterceptOutput(psDb, projectRoot, candidate, cur, conversationContext)
+          }
+          if (result.replaced && result.output) {
+            (output as { output: string }).output = result.output
+            if (!cached) {
+              toolOutputCache.set(t, candidate.args, result.output, resolvedPath ? dbGetFileHash(psDb, resolvedPath) || undefined : undefined)
+            } else {
+              recordCacheHit(sid, t, resolvedPath)
+            }
+            recordIndexSubstitution(sid, result.tokensSaved || 0, t, resolvedPath)
+            log("info", "index substitution applied", { tool: t, tokensSaved: result.tokensSaved, reason: result.reason, sessionID: sid })
+            if (callID) toolCalls.delete(callID)
+            return
+          } else {
+            recordIndexMiss(sid, t, resolvedPath, result.potentialSavings)
+            log("info", "index substitution missed", { tool: t, reason: result.reason, potentialSavings: result.potentialSavings, sessionID: sid })
+          }
+        }
+      }
+
+      if (!isCompressible(t)) {
+        if (callID) toolCalls.delete(callID)
+        return
+      }
       const cur = (output as { output?: string }).output
       if (typeof cur === "string" && cur.length > 0) {
         const compressed = compressToolOutput(t, cur)
+        const saved = cur.length - compressed.length
+        const semanticSaved = getSemanticCompressionSaved(cur, compressed)
+        // Use the real command as the intercept label, not the vague tool name
+        const label = cmd ? cmd.slice(0, 120) : t
+        if (saved > 0) {
+          if (semanticSaved > 0) {
+            recordSemanticCompression(sid, semanticSaved, resolvedPath)
+          } else {
+            recordCompression(sid, saved, resolvedPath)
+          }
+        }
         if (compressed !== cur) (output as { output: string }).output = compressed
+        recordToolIntercept(sid, label, resolvedPath)
+      }
+      if (callID) toolCalls.delete(callID)
+      } catch (e) {
+        log("error", "tool.execute.after failed", { error: String(e) })
       }
     },
   }

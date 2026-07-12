@@ -1,50 +1,58 @@
-import { test, expect, beforeEach } from "bun:test"
-import { recordTokens, getUsage, getFillRatio, clearSession } from "../src/budget"
+import { test, expect, beforeAll, beforeEach } from "bun:test"
+import { setProjectContext, recordSearch, recordFileRead, recordNativeSearch, recordToolIntercept, recordSearchSavings, recordCompression, recordIndexSubstitution, recordIndexMiss, getUsage, measuredSavings, clearSession } from "../src/budget"
+import { getRegistry, registerProject } from "../src/registry"
+import { existsSync, mkdirSync, rmSync } from "fs"
+import { join } from "path"
 
-beforeEach(() => {
-  clearSession("s1")
-  clearSession("s2")
+const TEST_DIR = "/tmp/test-budget-project-cm"
+
+beforeAll(() => {
+  if (!existsSync(join(process.env.HOME || "/tmp", ".cache/opencode"))) {
+    mkdirSync(join(process.env.HOME || "/tmp", ".cache/opencode"), { recursive: true })
+  }
+  registerProject(TEST_DIR)
+  setProjectContext(TEST_DIR)
 })
 
-test("recordTokens: accumulates per session", () => {
-  recordTokens("s1", 100, 50)
-  recordTokens("s1", 200, 60)
+test("recordSearch: persists to registry", () => {
+  recordSearch("s1", "test query", true)
   const u = getUsage("s1")
-  expect(u.input).toBe(200)
-  expect(u.output).toBe(60)
+  expect(u.searchQueries).toBeGreaterThanOrEqual(1)
 })
 
-test("recordTokens: sessions are independent", () => {
-  recordTokens("s1", 100, 50)
-  recordTokens("s2", 999, 1)
-  expect(getUsage("s1").input).toBe(100)
-  expect(getUsage("s2").input).toBe(999)
+test("recordFileRead: persists to registry", () => {
+  recordFileRead("s1")
+  const u = getUsage("s1")
+  expect(u.filesRead).toBeGreaterThanOrEqual(1)
 })
 
-test("recordTokens: ignores undefined sessionID", () => {
-  recordTokens(undefined, 100, 50)
-  expect(getUsage(undefined).input).toBe(0)
+test("measuredSavings: counts compression + search + index tokens", () => {
+  const SPLIT_DIR = `/tmp/test-budget-real-cm-${Date.now()}`
+  mkdirSync(SPLIT_DIR, { recursive: true })
+  registerProject(SPLIT_DIR)
+  setProjectContext(SPLIT_DIR)
+  const projectId = "s2-real"
+  clearSession(projectId)
+  recordSearchSavings(projectId, 1000) // chars saved by snippet, stored as tokens
+  recordCompression(projectId, 500) // chars saved by compression, stored as tokens
+  recordIndexSubstitution(projectId, 100) // tokens saved by index substitution
+  recordIndexMiss(projectId, "read", "file.ts")
+  recordNativeSearch(projectId, "test query")
+  recordToolIntercept(projectId, "bash", "ls -la")
+  const u = getUsage(projectId)
+  const measured = measuredSavings(u)
+  expect(measured).toBe(475) // 250 search + 125 compression + 100 index tokens
+  expect(u.compactions).toBe(0)
+  expect(u.indexSubstitutions).toBeGreaterThanOrEqual(1)
+  expect(u.indexMissed).toBeGreaterThanOrEqual(1)
+  expect(u.indexSavedTokens).toBeGreaterThanOrEqual(100)
+  // restore original test context
+  setProjectContext(TEST_DIR)
 })
 
-test("getFillRatio: returns 0 for unknown session", () => {
-  expect(getFillRatio("nope")).toBe(0)
-})
-
-test("getFillRatio: uses default limit when none provided", () => {
-  recordTokens("s1", 50000, 0)
-  const r = getFillRatio("s1", 100000)
-  expect(r).toBe(0.5)
-})
-
-test("getFillRatio: falls back to env default", () => {
-  recordTokens("s1", 1000, 0)
-  const r = getFillRatio("s1")
-  expect(r).toBeGreaterThan(0)
-  expect(r).toBeLessThan(1)
-})
-
-test("clearSession: resets usage", () => {
-  recordTokens("s1", 100, 50)
-  clearSession("s1")
-  expect(getUsage("s1").input).toBe(0)
+test("getUsage: returns empty for unset project", () => {
+  setProjectContext("/tmp/nonexistent-project-xyz")
+  const u = getUsage("s3")
+  expect(u.searchQueries || 0).toBe(0)
+  setProjectContext(TEST_DIR)
 })

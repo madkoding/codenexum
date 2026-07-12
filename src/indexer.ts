@@ -31,12 +31,14 @@ export function walk(dir: string, seen: Set<string>, cap = Infinity): string[] {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       if (files.length >= cap) break
       if (e.isDirectory()) {
-        if (!IGNORE.has(e.name)) files = files.concat(walk(join(dir, e.name), seen, cap - files.length))
+        if (!IGNORE.has(e.name)) files.push(...walk(join(dir, e.name), seen, cap - files.length))
       } else if (e.isFile() && CODE_EXTS.has(extname(e.name))) {
         files.push(join(dir, e.name))
       }
     }
-  } catch {}
+  } catch (e) {
+    // skip dirs that can't be read
+  }
   return files
 }
 
@@ -59,7 +61,9 @@ export function indexProject(root: string, maxFiles = getMaxFiles()): { files: n
       const ext = extname(fp)
       const p = PARSERS[ext]
       if (p) chunks.push(...p(content, fp))
-    } catch {}
+    } catch {
+      // skip unreadable files
+    }
   }
   const edges = extractEdges(chunks)
   return { files: files.length, chunks, fileHashes, edges, capped }

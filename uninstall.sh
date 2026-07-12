@@ -2,6 +2,17 @@
 set -euo pipefail
 
 OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
+case "$OPENCODE_DIR" in
+  *[\"\'\!\`$]*)
+    echo "ERROR: OPENCODE_DIR contains unsafe characters" >&2
+    exit 1
+    ;;
+esac
+case "$OPENCODE_DIR" in /|"")
+  echo "ERROR: refusing to operate on OPENCODE_DIR=$OPENCODE_DIR" >&2
+  exit 1
+  ;;
+esac
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
 SKILL_DIR="$OPENCODE_DIR/skills/context-manager"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
@@ -53,10 +64,10 @@ fi
 
 # ── Remove from config (robust, via bun) ──
 if [ -f "$CONFIG" ]; then
-  bun -e '
+  CONFIG="$CONFIG" PLUGIN_NAME="$PLUGIN_NAME" bun -e '
     const fs = require("fs");
-    const path = "'"$CONFIG"'";
-    const name = "'"$PLUGIN_NAME"'";
+    const path = process.env.CONFIG;
+    const name = process.env.PLUGIN_NAME;
     function jlog(level, msg, extra) {
       process.stderr.write(JSON.stringify({level, service: "context-manager.uninstall", message: msg, extra: extra||{}}) + "\n");
     }
@@ -73,7 +84,10 @@ if [ -f "$CONFIG" ]; then
     if (Array.isArray(obj.plugin)) {
       obj.plugin = obj.plugin.filter((p) => !p.includes(name));
     }
-    fs.writeFileSync(path, JSON.stringify(obj, null, 2) + "\n", "utf8");
+    fs.copyFileSync(path, path + ".bak");
+    const tmp = path + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + "\n", "utf8");
+    fs.renameSync(tmp, path);
     jlog("info", "plugin removed from config", {path});
   '
 fi

@@ -35,23 +35,31 @@ export function findBlockEndByBrace(lines: string[], startLine: number): number 
   let inString: string | null = null
   let escaped = false
   let started = false
+  let inLineComment = false
+  let inBlockComment = false
   for (let i = startLine; i < lines.length; i++) {
-    const trimmed = lines[i].trim()
+    const line = lines[i]
+    const trimmed = line.trim()
     // Skip import/export brace-only lines so they don't skew block depth.
     if (/^(import|export)\s*\{/.test(trimmed)) continue
-    for (const ch of lines[i]) {
-      if (escaped) {
-        escaped = false
-        continue
-      }
-      if (ch === "\\") {
-        escaped = true
-        continue
-      }
+    inLineComment = false
+    for (let j = 0; j < line.length; j++) {
+      const ch = line[j]
+      const next = line[j + 1]
+
+      if (inBlockComment) { if (ch === "*" && next === "/") { inBlockComment = false; j++ }; continue }
+      if (inLineComment) continue
+
+      if (escaped) { escaped = false; continue }
+      if (ch === "\\") { escaped = true; continue }
+
       if (inString) {
-        if (ch === inString) inString = null
+        if (ch === inString) { inString = null }
         continue
       }
+
+      if (ch === "/" && next === "/") { inLineComment = true; continue }
+      if (ch === "/" && next === "*") { inBlockComment = true; j++; continue }
       if (ch === '"' || ch === "'" || ch === "`") {
         inString = ch
         continue
@@ -99,4 +107,25 @@ function getIndent(line: string): number {
 
 export function bodyOf(lines: string[], startLine: number, endLine: number): string {
   return lines.slice(startLine, endLine + 1).join("\n")
+}
+
+export function countRealBraces(line: string): { open: number; close: number } {
+  let open = 0, close = 0
+  let inString: string | null = null
+  let inLineComment = false
+  let inBlockComment = false
+  for (let j = 0; j < line.length; j++) {
+    const ch = line[j]
+    const next = line[j + 1]
+    if (inBlockComment) { if (ch === "*" && next === "/") { inBlockComment = false; j++ }; continue }
+    if (inLineComment) continue
+    if (inString) { if (ch === inString) inString = null; continue }
+    if (ch === "\\") { j++; continue }
+    if (ch === "/" && next === "/") { inLineComment = true; continue }
+    if (ch === "/" && next === "*") { inBlockComment = true; j++; continue }
+    if (ch === '"' || ch === "'" || ch === "`") { inString = ch; continue }
+    if (ch === "{") open++
+    if (ch === "}") close++
+  }
+  return { open, close }
 }

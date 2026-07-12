@@ -1,5 +1,9 @@
-import { test, expect } from "bun:test"
-import { compactMessages } from "../src/compact"
+import { test, expect, beforeEach } from "bun:test"
+import { compactMessages, resetCompactionState } from "../src/compact"
+
+beforeEach(() => {
+  resetCompactionState()
+})
 
 function mkMsg(parts: any[]): { info: { role: string }; parts: any[] } {
   return { info: { role: "assistant" }, parts }
@@ -16,7 +20,7 @@ test("compactMessages: no compaction under threshold", () => {
     mkMsg([]),
     mkMsg([]),
   ]
-  expect(compactMessages(msgs, 0.3)).toBe(0)
+  expect(compactMessages(msgs, 0.3).count).toBe(0)
 })
 
 test("compactMessages: compacts old tool outputs above threshold", () => {
@@ -27,8 +31,8 @@ test("compactMessages: compacts old tool outputs above threshold", () => {
     mkMsg([]),
     mkMsg([]),
   ]
-  const n = compactMessages(msgs, 0.8)
-  expect(n).toBe(2)
+  const result = compactMessages(msgs, 0.8)
+  expect(result.count).toBe(2)
   expect(msgs[0].parts[0].state.output).toContain("read")
   expect(msgs[0].parts[0].state.output).toContain("omitted")
   expect(msgs[1].parts[0].state.output).toContain("ls")
@@ -41,19 +45,28 @@ test("compactMessages: keeps recent turns untouched", () => {
     mkMsg([mkTool("read", long)]),
     mkMsg([]),
   ]
-  const n = compactMessages(msgs, 0.9)
-  expect(n).toBe(1)
+  const result = compactMessages(msgs, 0.9)
+  expect(result.count).toBe(1)
   expect(msgs[1].parts[0].state.output).toBe(long)
 })
 
-test("compactMessages: skips already-compacted", () => {
+test("compactMessages: skips already-compacted outputs on second call", () => {
   const long = "x".repeat(2000)
   const msgs = [
-    mkMsg([{ type: "tool", tool: "read", state: { status: "completed", output: long, time: { start: 0, end: 1, compacted: 123 } } }]),
+    mkMsg([mkTool("read", long)]),
     mkMsg([]),
     mkMsg([]),
   ]
-  expect(compactMessages(msgs, 0.9)).toBe(0)
+  const first = compactMessages(msgs, 0.9)
+  expect(first.count).toBe(1)
+  // Second call with fresh copies of the same messages should not re-compact
+  const msgs2 = [
+    mkMsg([mkTool("read", long)]),
+    mkMsg([]),
+    mkMsg([]),
+  ]
+  const second = compactMessages(msgs2, 0.9)
+  expect(second.count).toBe(0)
 })
 
 test("compactMessages: skips short outputs", () => {
@@ -63,7 +76,7 @@ test("compactMessages: skips short outputs", () => {
     mkMsg([]),
     mkMsg([]),
   ]
-  expect(compactMessages(msgs, 0.9)).toBe(0)
+  expect(compactMessages(msgs, 0.9).count).toBe(0)
 })
 
 test("compactMessages: marks compacted time", () => {
@@ -85,8 +98,9 @@ test("compactMessages: deduplicates identical tool outputs", () => {
     mkMsg([]),
     mkMsg([]),
   ]
-  const n = compactMessages(msgs, 0.9)
-  expect(n).toBe(2)
+  const result = compactMessages(msgs, 0.9)
+  // First output gets compacted, second is a duplicate (same fingerprint) and also gets compacted with "duplicate" label
+  expect(result.count).toBe(2)
   expect(msgs[0].parts[0].state.output).toContain("omitted")
   expect(msgs[1].parts[0].state.output).toContain("duplicate")
 })
@@ -100,8 +114,8 @@ test("compactMessages: does not deduplicate different outputs", () => {
     mkMsg([]),
     mkMsg([]),
   ]
-  const n = compactMessages(msgs, 0.9)
-  expect(n).toBe(2)
+  const result = compactMessages(msgs, 0.9)
+  expect(result.count).toBe(2)
   expect(msgs[0].parts[0].state.output).toContain("omitted")
   expect(msgs[1].parts[0].state.output).toContain("omitted")
   expect(msgs[1].parts[0].state.output).not.toContain("duplicate")

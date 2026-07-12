@@ -31,9 +31,76 @@ Here's what happens when the AI needs to find `authenticate()` in a 16-file proj
 
 The difference is even bigger for searches where the keyword doesn't match literally. Searching for `"invoice"` finds `createInvoice`. Searching for `"websocket"` finds `WebSocketHandler`. The trigram tokenizer matches substrings, not just whole words — something `grep` can't do.
 
+## Tokenizer
+
+The plugin measures token counts with `gpt-tokenizer` (cl100k_base) when it is available in the runtime environment. This gives counts close to what GPT-4/GPT-4o/Claude 3 actually see. If `gpt-tokenizer` is not installed, it falls back silently to a fast `~4 chars/token` heuristic.
+
+No npm dependency is declared for `gpt-tokenizer` so the plugin stays self-contained when installed through opencode's shim. To get exact counts, install it in the environment where opencode runs (e.g. `bun add gpt-tokenizer`).
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `CONTEXT_MANAGER_TOKENIZER` | `tiktoken` | `tiktoken` (exact) or `estimate` (4 chars/token). |
+| `CONTEXT_MANAGER_TOKEN_CACHE_SIZE` | `200` | LRU cache size for real token counts. |
+| `CONTEXT_MANAGER_SNIPPET_LINES` | `12` | Lines per search snippet. |
+| `CONTEXT_MANAGER_INTERCEPT_MODE` | `substitute` | `off`, `warn`, or `substitute`. Replaces native `read`/`grep`/`glob`/`bash` outputs with index snippets. |
+| `CONTEXT_MANAGER_INTERCEPT_BASH` | `1` | Intercept simple `bash` commands. Set to `0` to disable. |
+| `CONTEXT_MANAGER_TOOL_MAX_LINES_READ` | `25` | Max lines kept from a `read` output. |
+| `CONTEXT_MANAGER_TOOL_MAX_LINES_BASH` | `30` | Max lines kept from a `bash` output. |
+| `CONTEXT_MANAGER_TOOL_MAX_LINES_GREP` | `25` | Max lines kept from a `grep` output. |
+| `CONTEXT_MANAGER_TOOL_MAX_LINES_GLOB` | `50` | Max lines kept from a `glob` output. |
+| `CONTEXT_MANAGER_TOOL_MAX_LINES` | — | Legacy fallback for all tools. |
+| `CONTEXT_MANAGER_SEMANTIC_COMPRESS` | `1` | Summarize test/linter/install/build outputs. |
+| `CONTEXT_MANAGER_GROUP_RESULTS` | `1` | Group `context_search` results by file when 5+. |
+| `CONTEXT_MANAGER_VERBOSE_PROMPT` | `0` | Include full top/hot files in the system prompt. |
+| `CONTEXT_MANAGER_COMPACT_AT` | `0.6` | Context fill ratio to start compacting old tool outputs. |
+| `CONTEXT_MANAGER_COMPACT_MIN_CHARS` | `400` | Min output size to compact. |
+| `CONTEXT_MANAGER_CACHE_TOOLS` | `1` | Cache recent tool outputs answered from the index. |
+| `CONTEXT_MANAGER_SMART_READ` | `0` | Only return chunks relevant to the conversation (experimental). |
+| `CONTEXT_MANAGER_INCLUDE_COMMENTS` | `1` | Include comments/docstrings in snippets. Set to `0` to strip. |
+| `CONTEXT_MANAGER_COMPRESS_WRITES` | `0` | Instruct the model to wrap large writes in gzip+base64 markers (experimental). |
+| `CONTEXT_MANAGER_COMPRESS_WRITES_THRESHOLD` | `1000` | Min characters in a write before using the compression markers. |
+| `CONTEXT_MANAGER_COMPRESS_OUTPUT` | `0` | Compress long assistant responses and user messages in the conversation history using gzip+base64 markers. |
+| `CONTEXT_MANAGER_COMPRESS_OUTPUT_THRESHOLD` | `500` | Min characters in a message before compressing it in the history. |
+
+## Generative write compression
+
+When `CONTEXT_MANAGER_COMPRESS_WRITES=1`, the system prompt tells the model to emit files of `CONTEXT_MANAGER_COMPRESS_WRITES_THRESHOLD`+ characters as:
+
+```
+--- compressed:<relative file path> ---
+<gzip-compressed content as base64>
+--- end compressed ---
+```
+
+The plugin transparently decompresses the content before it reaches the filesystem via the `experimental.chat.messages.transform` hook, reducing the model's output tokens for large file writes. The dashboard tracks `generativeCompression` as a separate savings mechanism.
+
+## Tool interception
+
+By default the plugin intercepts `read`, `grep`, `glob`, and one-shot `bash` commands (`cat`, `head`, `tail`, `grep`, `rg`, `find`, `fd`, `git grep`) and replaces their output with a compact result from the local code index. This is **post-execution substitution**: the native tool still runs, but the AI receives the indexed snippet instead of the raw full output, saving context tokens.
+
+Complex commands (pipes, redirecciones, subshells) are never intercepted. Set `CONTEXT_MANAGER_INTERCEPT_MODE=off` to disable interception globally, or `=warn` to only log opportunities without replacing output.
+
+### Context token savings
+
+The plugin saves context tokens through several mechanisms:
+
+1. **Index substitution** — replaces full file reads with compact snippets.
+2. **Snippet length** — search results default to 12 lines instead of 20.
+3. **Per-tool truncation** — `read`/`grep` outputs are capped to 25 lines, `bash` to 30.
+4. **Semantic compression** — test runners, linters, installers and build tools are summarized.
+5. **Result grouping** — search results from the same file are grouped under one header.
+6. **History compaction** — old tool outputs are replaced with references to the index when context is tight.
+7. **Tool output cache** — repeated reads of unchanged files reuse the compact snippet.
+8. **Smart read** (disabled by default) — only returns chunks related to the current question.
+9. **Strip comments** (disabled by default) — removes comments/docstrings from snippets.
+10. **Generative write compression** (disabled by default) — large writes are wrapped in gzip+base64 markers by the model and decompressed transparently.
+11. **Bidirectional output compression** (disabled by default) — long assistant responses and user messages are compressed in the conversation history using gzip+base64 markers, saving input tokens on subsequent turns.
+
 ## Benchmark
 
-Measured with Bun's built-in token estimation (~4 chars/token) on a synthetic 16-file project (74 indexed chunks, 8,207 source chars).
+Measured with the active tokenizer (defaults to tiktoken real counts when available) on a synthetic 16-file project (74 indexed chunks, 8,207 source chars).
 
 ### Token usage per query
 

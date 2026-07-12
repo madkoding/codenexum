@@ -1,6 +1,7 @@
 /**
- * REAL benchmark: uses tiktoken (cl100k_base) for exact token counts.
- * Calls Python via subprocess; caches results.
+ * Token-savings benchmark using the plugin's own tokenizer.
+ * Prefers gpt-tokenizer (cl100k_base) when installed; otherwise falls back
+ * silently to the ~4 chars/token heuristic.  No external Python process.
  *
  * Run: bun test/benchmark.ts
  */
@@ -14,24 +15,11 @@ import { indexProject } from "../src/indexer"
 import { buildSystemPrompt } from "../src/prompt"
 import { compressToolOutput } from "../src/compress"
 import { compactMessages } from "../src/compact"
+import { estimateTokens, getTokenizerMode } from "../src/tokens"
 import type { Chunk } from "../src/types"
 
-// ── tiktoken bridge ────────────────────────────────────────────────────
-const cache = new Map<string, number>()
-async function tokens(s: string): Promise<number> {
-  if (!s) return 0
-  if (cache.has(s)) return cache.get(s)!
-  const b64 = Buffer.from(s).toString("base64")
-  const p = Bun.spawn({
-    cmd: ["python3", "-c", `import tiktoken,base64,sys; enc=tiktoken.get_encoding("cl100k_base"); print(len(enc.encode(base64.b64decode(sys.argv[1]).decode("utf-8","replace"))))`, b64],
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  const out = await new Response(p.stdout).text()
-  await p.exited
-  const n = parseInt(out.trim(), 10)
-  cache.set(s, n)
-  return n
+function tokens(s: string): number {
+  return estimateTokens(s)
 }
 
 // ── synthetic project generator ─────────────────────────────────────────
@@ -68,8 +56,8 @@ async function benchSearch(db: Database) {
     const results = dbSearch(db, q, 10)
     const full = results.map(r => `${r.type} ${r.name} @ ${r.file}:${r.line}\n  ${r.content}`).join("\n\n")
     const compact = results.map(r => `${r.type} ${r.name} @ ${r.file}:${r.line}`).join("\n\n")
-    before += await tokens(full)
-    after += await tokens(compact)
+    before += tokens(full)
+    after += tokens(compact)
   }
   rmSync(tmp, { recursive: true })
   return { before: Math.round(before / queries.length), after: Math.round(after / queries.length) }
@@ -83,12 +71,12 @@ async function benchTruncate(db: Database) {
   })
   let rawTotal = 0, truncatedTotal = 0
   for (const content of longContents) {
-    rawTotal += await tokens(content)
-    truncatedTotal += await tokens(content.length <= 200 ? content : content.slice(0, 200) + "…")
+    rawTotal += tokens(content)
+    truncatedTotal += tokens(content.length <= 200 ? content : content.slice(0, 200) + "…")
   }
   // dedup effect
-  const dupRaw = await tokens(Array.from({ length: 20 }, () => "FROM orders").join("\n"))
-  const dupDedup = await tokens("FROM orders")
+  const dupRaw = tokens(Array.from({ length: 20 }, () => "FROM orders").join("\n"))
+  const dupDedup = tokens("FROM orders")
   return { before: rawTotal + dupRaw, after: truncatedTotal + dupDedup }
 }
 
@@ -100,8 +88,8 @@ async function benchCompress() {
   const outs = [{ t: "read", o: readOut }, { t: "bash", o: bashOut }, { t: "grep", o: grepOut }, { t: "glob", o: globOut }]
   let before = 0, after = 0
   for (const { t, o } of outs) {
-    before += await tokens(o)
-    after += await tokens(compressToolOutput(t, o))
+    before += tokens(o)
+    after += tokens(compressToolOutput(t, o))
   }
   return { before, after }
 }
@@ -121,11 +109,11 @@ async function benchCompact() {
     mkMsg("bash", longOut(100), { command: "ls" }),
   ]
   let before = 0
-  for (const m of msgs) before += await tokens(m.parts[0].state!.output!)
+  for (const m of msgs) before += tokens(m.parts[0].state!.output!)
   const msgsCopy = JSON.parse(JSON.stringify(msgs))
   compactMessages(msgsCopy as any, 0.85)
   let after = 0
-  for (const m of msgsCopy as any[]) after += await tokens(m.parts[0].state.output)
+  for (const m of msgsCopy as any[]) after += tokens(m.parts[0].state.output)
   return { before, after }
 }
 
@@ -145,7 +133,7 @@ async function benchPrompt(db: Database) {
     `so you can read only the specific file and section you need.`,
     `</context-manager>`,
   ].join("\n")
-  return { before: await tokens(before), after: await tokens(after) }
+  return { before: tokens(before), after: tokens(after) }
 }
 
 async function benchToolDescs() {
@@ -161,7 +149,7 @@ async function benchToolDescs() {
     "Show index stats: project root, timestamp, chunk counts by language, context fill %.",
     "Delete the local code index.",
   ].join(" ")
-  return { before: await tokens(before), after: await tokens(after) }
+  return { before: tokens(before), after: tokens(after) }
 }
 
 // ── runner ──────────────────────────────────────────────────────────────
@@ -169,9 +157,10 @@ async function main() {
   const db = new Database(":memory:")
   initSchema(db)
 
+  const mode = getTokenizerMode()
   console.log("\n╔══════════════════════════════════════════════════════════════════╗")
-  console.log("║  Context Manager — Token Savings Benchmark (REAL)                ║")
-  console.log("║  Tokenizer: tiktoken cl100k_base (GPT-4/Claude encoding)         ║")
+  console.log("║  Context Manager — Token Savings Benchmark                       ║")
+  console.log(`║  Tokenizer: ${(mode === "tiktoken" ? "gpt-tokenizer cl100k_base (real)" : "heuristic 4 chars/token").padEnd(58)} ║`)
   console.log("╚══════════════════════════════════════════════════════════════════╝\n")
 
   const suites = [

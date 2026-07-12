@@ -3,9 +3,17 @@ import type { SearchResult } from "./store"
 export interface FormatOptions {
   compact?: boolean
   snippetLines?: number
+  groupByFile?: boolean
 }
 
-const DEFAULT_SNIPPET_LINES = 20
+export function getDefaultSnippetLines(): number {
+  const v = process.env.CONTEXT_MANAGER_SNIPPET_LINES
+  if (!v) return 12
+  const n = parseInt(v, 10)
+  return Number.isFinite(n) && n > 0 ? n : 12
+}
+
+const DEFAULT_SNIPPET_LINES = getDefaultSnippetLines()
 
 export function formatSearchResult(
   result: SearchResult,
@@ -66,5 +74,45 @@ export function formatSearchResults(
   projectRoot: string,
   options: FormatOptions = {},
 ): string {
+  if (options.groupByFile ?? shouldGroupResults(results.length)) {
+    return formatSearchResultsGrouped(results, projectRoot, options)
+  }
   return results.map(r => formatSearchResult(r, projectRoot, options)).join("\n\n")
+}
+
+export function shouldGroupResults(resultCount: number): boolean {
+  return resultCount >= 5
+}
+
+function formatSearchResultsGrouped(
+  results: SearchResult[],
+  projectRoot: string,
+  options: FormatOptions = {},
+): string {
+  const grouped = new Map<string, SearchResult[]>()
+  for (const r of results) {
+    const list = grouped.get(r.file) || []
+    list.push(r)
+    grouped.set(r.file, list)
+  }
+
+  const snippetLines = options.snippetLines ?? getDefaultSnippetLines()
+  const lines: string[] = []
+  for (const [file, fileResults] of grouped) {
+    const rel = relativePath(projectRoot, file)
+    lines.push(rel)
+    for (const r of fileResults) {
+      const range = r.lineEnd > r.line ? `${r.line}-${r.lineEnd}` : `${r.line}`
+      lines.push(`  ${r.type} ${r.name} @ ${range}`)
+      if (!options.compact) {
+        const snippet = buildSnippet(r.body, snippetLines, r.line)
+        if (snippet) {
+          for (const line of snippet.split("\n")) {
+            lines.push(`    ${line}`)
+          }
+        }
+      }
+    }
+  }
+  return lines.join("\n")
 }

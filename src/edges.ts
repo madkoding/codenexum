@@ -55,6 +55,14 @@ export function resolveRelativePath(baseFile: string, importPath: string): strin
 export function extractEdges(chunks: Chunk[]): Edge[] {
   const edges: Edge[] = []
   const byFile = groupByFile(chunks)
+  const byName = new Map<string, Chunk[]>()
+  for (const c of chunks) {
+    if (isSymbolType(c.type)) {
+      let a = byName.get(c.name)
+      if (!a) { a = []; byName.set(c.name, a) }
+      a.push(c)
+    }
+  }
 
   for (const c of chunks) {
     if (c.type === "import") {
@@ -84,7 +92,7 @@ export function extractEdges(chunks: Chunk[]): Edge[] {
       const callee = m[1]
       if (JS_KEYWORDS.has(callee)) continue
       if (callee === c.name && c.type === "function") continue // self-call in declaration
-      const target = findSymbol(byFile, c.file, callee)
+      const target = findSymbol(byFile, byName, c.file, callee)
       if (target && (target.file !== c.file || target.name !== c.name)) {
         edges.push({
           sourceFile: c.file,
@@ -99,7 +107,7 @@ export function extractEdges(chunks: Chunk[]): Edge[] {
     EXTENDS_RE.lastIndex = 0
     while ((m = EXTENDS_RE.exec(body)) !== null) {
       const parent = m[1]
-      const target = findSymbol(byFile, c.file, parent)
+      const target = findSymbol(byFile, byName, c.file, parent)
       if (target) {
         edges.push({
           sourceFile: c.file,
@@ -114,7 +122,7 @@ export function extractEdges(chunks: Chunk[]): Edge[] {
     IMPLEMENTS_RE.lastIndex = 0
     while ((m = IMPLEMENTS_RE.exec(body)) !== null) {
       for (const iface of m[1].split(",").map(s => s.trim()).filter(Boolean)) {
-        const target = findSymbol(byFile, c.file, iface)
+        const target = findSymbol(byFile, byName, c.file, iface)
         if (target) {
           edges.push({
             sourceFile: c.file,
@@ -152,17 +160,13 @@ function groupByFile(chunks: Chunk[]): Record<string, Chunk[]> {
   return map
 }
 
-function findSymbol(byFile: Record<string, Chunk[]>, sourceFile: string, name: string): Chunk | null {
-  // Prefer same file for local helpers; then global fallback.
+function findSymbol(byFile: Record<string, Chunk[]>, byName: Map<string, Chunk[]>, sourceFile: string, name: string): Chunk | null {
   const sameFile = byFile[sourceFile] || []
   for (const c of sameFile) {
     if (c.name === name && isSymbolType(c.type)) return c
   }
-  for (const file in byFile) {
-    for (const c of byFile[file]) {
-      if (c.name === name && isSymbolType(c.type)) return c
-    }
-  }
+  const candidates = byName.get(name)
+  if (candidates) return candidates[0]
   return null
 }
 

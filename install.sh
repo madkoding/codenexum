@@ -2,6 +2,12 @@
 set -euo pipefail
 
 OPENCODE_DIR="${OPENCODE_DIR:-$HOME/.config/opencode}"
+case "$OPENCODE_DIR" in
+  *[\"\'\!\`$]*)
+    echo "ERROR: OPENCODE_DIR contains unsafe characters" >&2
+    exit 1
+    ;;
+esac
 PLUGIN_DIR="$OPENCODE_DIR/plugins"
 CONFIG="$OPENCODE_DIR/opencode.jsonc"
 SHIM_NAME="context-manager-loading-shim"
@@ -56,19 +62,14 @@ fi
 # ── 3. Add only the shim to opencode config ──
 add_shim_to_config() {
   local cfg="$1" shim="$2"
-  bun -e '
+  CFG="$cfg" SHIM="$shim" bun -e '
     const fs = require("fs");
-    const path = "'"$cfg"'";
-    const shim = "'"$shim"'";
+    const path = process.env.CFG;
+    const shim = process.env.SHIM;
     function jlog(level, msg, extra) {
       process.stderr.write(JSON.stringify({level, service: "context-manager.install", message: msg, extra: extra||{}}) + "\n");
     }
     let txt = fs.existsSync(path) ? fs.readFileSync(path, "utf8") : null;
-
-    if (txt && txt.includes(shim)) {
-      jlog("info", "shim already in config", {path, shim});
-      process.exit(0);
-    }
 
     let obj = {};
     if (txt && txt.trim() !== "") {
@@ -84,17 +85,37 @@ add_shim_to_config() {
       }
     }
 
+    let changed = false;
     if (!Array.isArray(obj.plugin)) obj.plugin = [];
     // Remove stale context-manager plugin entries (old direct references)
     obj.plugin = obj.plugin.filter(p => !p.includes("context-manager") || p === shim);
-    if (!obj.plugin.includes(shim)) obj.plugin.push(shim);
+    if (!obj.plugin.includes(shim)) {
+      obj.plugin.push(shim);
+      changed = true;
+    }
+
+    if (!obj.permission) obj.permission = {};
+    if (!obj.permission.skill) obj.permission.skill = {};
+    if (!obj.permission.skill["context-manager"]) {
+      obj.permission.skill["context-manager"] = "allow";
+      changed = true;
+    }
 
     if (!txt || txt.trim() === "") {
       obj["$schema"] = "https://opencode.ai/config.json";
+      changed = true;
+    }
+
+    if (!changed) {
+      jlog("info", "shim already in config", {path, shim});
+      process.exit(0);
     }
 
     const out = JSON.stringify(obj, null, 2) + "\n";
-    fs.writeFileSync(path, out, "utf8");
+    if (txt) fs.copyFileSync(path, path + ".bak");
+    const tmp = path + ".tmp";
+    fs.writeFileSync(tmp, out, "utf8");
+    fs.renameSync(tmp, path);
     jlog("info", "shim added to config", {path, shim});
   '
 }
@@ -112,3 +133,9 @@ EOF
 fi
 
 log info "install complete" uninstaller "uninstall.sh"
+
+# Clean stale test projects from registry
+REGISTRY_DB="$HOME/.cache/opencode/context-manager-registry.sqlite"
+if [ -f "$REGISTRY_DB" ]; then
+  sqlite3 "$REGISTRY_DB" "DELETE FROM projects WHERE name LIKE 'test-%'; DELETE FROM usage_events WHERE project_id IN (SELECT id FROM projects WHERE name LIKE 'test-%');" 2>/dev/null
+fi

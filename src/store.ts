@@ -32,9 +32,26 @@ function queryAll(db: Database, sql: string, ...args: any[]): any[] {
   return (db as any).query(sql).all(...args)
 }
 
+const FTS_COLUMNS = ["name", "content", "id", "file", "type", "line", "lineEnd", "body", "lang"]
+
 export function initSchema(db: Database): void {
   db.exec("PRAGMA journal_mode = WAL")
   db.exec("PRAGMA synchronous = NORMAL")
+
+  // If the FTS table exists but its columns are stale (e.g. missing lineEnd),
+  // drop it so it gets recreated with the current schema. FTS5 does not
+  // support ALTER TABLE, so this is the only way to migrate.
+  try {
+    const existing = queryAll(db, "PRAGMA table_info(chunks_fts)") as { name: string }[]
+    if (existing.length > 0) {
+      const names = new Set(existing.map((c) => c.name))
+      const missing = FTS_COLUMNS.filter((c) => !names.has(c))
+      if (missing.length > 0) {
+        db.exec("DROP TABLE chunks_fts")
+      }
+    }
+  } catch {}
+
   db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     name, content,
     id UNINDEXED, file UNINDEXED, type UNINDEXED, line UNINDEXED, lineEnd UNINDEXED, body UNINDEXED, lang UNINDEXED,
@@ -77,8 +94,11 @@ export function dbInsertChunks(db: Database, chunks: Chunk[]): void {
 }
 
 export function dbDeleteFile(db: Database, file: string): void {
-  run(db, "DELETE FROM chunks_fts WHERE file = ?", file)
-  run(db, "DELETE FROM file_hashes WHERE file = ?", file)
+  const tx = db.transaction(() => {
+    run(db, "DELETE FROM chunks_fts WHERE file = ?", file)
+    run(db, "DELETE FROM file_hashes WHERE file = ?", file)
+  })
+  tx()
 }
 
 export function dbGetFileHash(db: Database, file: string): string | null {
@@ -201,19 +221,36 @@ export function dbFindImpacted(
   db: Database,
   files: string[],
 ): { file: string; dependent: string; kind: string; symbol: string }[] {
-  const results: { file: string; dependent: string; kind: string; symbol: string }[] = []
-  for (const f of files) {
-    const rows = queryAll(db, "SELECT source_file, source_symbol, kind FROM edges WHERE target_file = ?", f) as { source_file: string; source_symbol: string; kind: string }[]
-    for (const r of rows) {
-      results.push({ file: f, dependent: r.source_file, kind: r.kind, symbol: r.source_symbol })
-    }
-  }
-  return results
+  if (files.length === 0) return []
+  const placeholders = files.map(() => "?").join(",")
+  const rows = queryAll(db, `SELECT target_file, source_file, source_symbol, kind FROM edges WHERE target_file IN (${placeholders})`, ...files) as { target_file: string; source_file: string; source_symbol: string; kind: string }[]
+  return rows.map(r => ({ file: r.target_file, dependent: r.source_file, kind: r.kind, symbol: r.source_symbol }))
 }
 
 export function dbEdgeCount(db: Database): number {
   const row = queryOne(db, "SELECT count(*) as n FROM edges") as { n: number }
   return row.n
+}
+
+export function dbGetChunksForFile(db: Database, file: string): SearchResult[] {
+  return queryAll(
+    db,
+    "SELECT name, content, body, file, type, line, lineEnd, lang, bm25(chunks_fts) as score FROM chunks_fts WHERE file = ? ORDER BY line",
+    file,
+  ) as SearchResult[]
+}
+
+export function dbFindFilesByPattern(db: Database, pattern: string): string[] {
+  // Convert a glob-like pattern into an SQLite LIKE expression.
+  // Supported: **/ anywhere, * for any chars within a segment, ? for single char.
+  let like = pattern.toLowerCase()
+  // Escape SQL LIKE special chars, then restore our wildcards.
+  like = like.replace(/%/g, "\\%").replace(/_/g, "\\_")
+  like = like.replace(/\*\*/g, "%")
+  like = like.replace(/\*/g, "%")
+  like = like.replace(/\?/g, "_")
+  const rows = queryAll(db, "SELECT DISTINCT file FROM chunks_fts WHERE file LIKE ? ESCAPE '\\'", like) as { file: string }[]
+  return rows.map(r => r.file)
 }
 
 export function dbStatsByLang(db: Database): { ext: string; n: number }[] {

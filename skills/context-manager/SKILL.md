@@ -11,7 +11,9 @@ When working with large projects, be strategic about context usage to avoid hitt
 
 A code index is available via the `context_search` tool. It tracks functions, classes, interfaces, type aliases, enums, imports, exports, and more across the project. The index **auto-updates** when files are edited or created — no manual re-indexing needed.
 
-**Always use `context_search` before reading files** to find the exact file and line number you need. This avoids blindly reading large files and wasting tokens.
+**Whenever the user asks anything about code location, usage, references, symbols, definitions, or exploration, invoke `context_search` FIRST.** Do not use native `grep`, `glob`, `bash`, or `read` for code search — the index is faster and cheaper.
+
+Triggers for `context_search` include: "find", "search", "lookup", "locate", "where is", "where are", "usages of", "uses of", "who calls", "references to", "definition of", "show me", "explore", "what files use", "symbol".
 
 ### Search filters
 
@@ -111,6 +113,14 @@ Run `context_dashboard` to open a local web dashboard at `http://127.0.0.1:3567`
 - Recent searches and recent index activity.
 
 The dashboard refreshes every 3 seconds and is **localhost-only**.
+
+## When delegating to a subagent
+
+If you spawn a subagent via `task()`, include the following in its task description:
+
+> Use `context_search` for all code search — never `grep`/`rg`/`find`/`glob`/`read` for searching. The project has a pre-built code index. Available tools: `context_search`, `context_related`, `context_impact`, `context_stats`, `context_compression`.
+
+This ensures the subagent uses the index instead of native tools, even though it cannot directly access the plugin's tools.
 
 ## Guiding the User
 

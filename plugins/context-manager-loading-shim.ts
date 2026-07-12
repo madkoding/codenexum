@@ -89,12 +89,8 @@ async function installOrUpdate(log: (level: string, message: string, extra?: Rec
         const repoDir = findRepoDir()
         if (repoDir) {
           log("info", "local repo found", { repoDir })
-          const changed = await installFromRepo(repoDir, log)
-          if (changed) {
-            log("info", "installed/updated from local repo")
-            return resolve({ installed: true, needsRestart: true })
-          }
-          log("info", "local copy up to date")
+          await installFromRepo(repoDir, log)
+          log("info", "local copy ready")
           return resolve({ installed: true, needsRestart: false })
         }
 

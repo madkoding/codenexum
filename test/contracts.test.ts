@@ -576,18 +576,18 @@ test("C14: 'index cleared' success message is stable", async () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
-// C15: Storage path contract — DB file location
+// C15: Storage path contract — DB file location (per-project)
 // ═══════════════════════════════════════════════════════════════
-test("C15: DB path is under ~/.cache/opencode/context-manager.sqlite", () => {
-  const src = require("fs").readFileSync("./src/plugin.ts", "utf-8")
-  expect(src).toContain("context-manager.sqlite")
+test("C15: DB path is under ~/.cache/opencode/", () => {
+  const src = require("fs").readFileSync("./src/registry.ts", "utf-8")
   expect(src).toContain(".cache/opencode")
+  expect(src).toContain("context-manager-")
 })
 
-test("C15: old JSON path is cleaned up on init", () => {
-  const src = require("fs").readFileSync("./src/plugin.ts", "utf-8")
-  expect(src).toContain("context-manager.json")
-  expect(src).toContain("unlinkSync")
+test("C15: registry has projects and usage_events tables", () => {
+  const src = require("fs").readFileSync("./src/registry.ts", "utf-8")
+  expect(src).toContain("CREATE TABLE IF NOT EXISTS projects")
+  expect(src).toContain("CREATE TABLE IF NOT EXISTS usage_events")
 })
 
 // ═══════════════════════════════════════════════════════════════
@@ -626,3 +626,4 @@ test("C16: updateFile takes (db, fp, log?) and returns boolean", () => {
   const result = updateFile(db, fp)
   expect(typeof result).toBe("boolean")
 })
+

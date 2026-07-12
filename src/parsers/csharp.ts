@@ -1,5 +1,5 @@
 import type { Chunk } from "../types"
-import { findBlockEndByBrace, bodyOf, makeChunk, getLang } from "./common"
+import { findBlockEndByBrace, bodyOf, makeChunk, getLang, countRealBraces } from "./common"
 
 export function csParse(c: string, f: string): Chunk[] {
   const r: Chunk[] = []
@@ -16,10 +16,8 @@ export function csParse(c: string, f: string): Chunk[] {
     if (!trimmed) continue
 
     const prevDepth = depth
-    for (const ch of line) {
-      if (ch === "{") depth++
-      if (ch === "}") depth--
-    }
+    const b = countRealBraces(line)
+    depth += b.open - b.close
 
     if (currentClass && depth <= classDepth && depth <= recordDepth) {
       r.push(makeChunk({

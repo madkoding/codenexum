@@ -39,7 +39,7 @@ export function pyParse(c: string, f: string): Chunk[] {
     }
 
     // Function/method declaration
-    const fn = trimmed.match(/^def\s+(\w+)\s*\(([^)]*)\)\s*(->\s*[^:]+)?\s*:/)
+    const fn = trimmed.match(/^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)\s*(->\s*[^:]+)?\s*:/)
     if (fn) {
       const endLine = findBlockEndByIndent(lines, i)
       const name = classStack.length > 0 ? `${classStack[classStack.length - 1].name}.${fn[1]}` : fn[1]
