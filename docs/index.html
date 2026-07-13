@@ -8,20 +8,22 @@
 <meta property="og:title" content="CodeNexum — code index + context compression for opencode" />
 <meta property="og:description" content="Cuts tool output tokens by 40-80%. Free, open source, cross-platform." />
 <meta property="og:image" content="./assets/icon.png" />
-<meta name="theme-color" content="#0b0d10" />
+<meta name="theme-color" content="#0a0c10" />
 <link rel="icon" href="./assets/icon.png" />
 <style>
   :root {
-    --bg: #0b0d10;
-    --panel: #12151b;
-    --panel2: #171b22;
-    --text: #e6e9ef;
-    --muted: #8b92a8;
-    --accent: #3b82f6;
-    --accent2: #60a5fa;
+    --bg: #0a0c10;
+    --panel: #111318;
+    --panel2: #16181f;
+    --text: #e2e5ed;
+    --muted: #7a8199;
+    --accent: #2dd4bf;
+    --accent2: #5eead4;
+    --accent-dim: rgba(45, 212, 191, 0.12);
     --good: #22c55e;
     --warn: #f59e0b;
-    --border: #1f2937;
+    --border: #1e2028;
+    --radius: 10px;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -29,7 +31,7 @@
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
-    line-height: 1.6;
+    line-height: 1.65;
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--accent2); text-decoration: none; }
@@ -47,24 +49,62 @@
 
   .wrap { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
 
-  /* Hero */
   .hero {
     padding: 5rem 0 4rem;
     text-align: center;
-    background:
-      radial-gradient(800px 400px at 50% 0%, rgba(59,130,246,0.15), transparent 60%),
-      radial-gradient(600px 300px at 80% 20%, rgba(34,211,238,0.08), transparent 60%);
+    position: relative;
+    overflow: hidden;
   }
-  .hero img { width: 140px; height: 140px; filter: drop-shadow(0 8px 32px rgba(59,130,246,0.3)); }
-  .hero h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); margin: 1.5rem 0 0.5rem; font-weight: 800; letter-spacing: -0.02em; }
-  .hero .tag { font-size: 1.2rem; color: var(--muted); margin: 0 0 2rem; }
-  .hero .lede { font-size: 1.15rem; max-width: 720px; margin: 0 auto 2.5rem; color: #c8cdd8; }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 900px;
+    height: 600px;
+    background: radial-gradient(ellipse at center, rgba(45, 212, 191, 0.08), transparent 60%),
+                radial-gradient(ellipse at 70% 30%, rgba(45, 212, 191, 0.05), transparent 50%);
+    pointer-events: none;
+  }
+  .hero-inner { position: relative; z-index: 1; }
+  .hero-logo {
+    width: 120px; height: 120px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .hero-logo img {
+    width: 100%; height: 100%;
+    filter: drop-shadow(0 0 40px rgba(45, 212, 191, 0.25));
+  }
+  .hero h1 {
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    margin: 1.5rem 0 0.5rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #e2e5ed 0%, #5eead4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero .tag {
+    font-size: 1.15rem;
+    color: var(--muted);
+    margin: 0 0 1.5rem;
+  }
+  .hero .tag a { color: var(--accent2); }
+  .hero .lede {
+    font-size: 1.1rem;
+    max-width: 680px;
+    margin: 0 auto 2rem;
+    color: #bcc0cc;
+  }
+  .hero .lede strong { color: var(--accent2); font-weight: 600; }
 
-  /* CTA */
   .cta { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin: 1.5rem 0 1rem; }
   .btn {
     display: inline-flex; align-items: center; gap: 0.5rem;
-    padding: 0.85rem 1.4rem; border-radius: 10px;
+    padding: 0.8rem 1.5rem; border-radius: var(--radius);
     font-weight: 600; font-size: 0.95rem;
     border: 1px solid var(--border);
     background: var(--panel); color: var(--text);
@@ -72,104 +112,170 @@
     cursor: pointer;
   }
   .btn:hover { background: var(--panel2); border-color: var(--accent); text-decoration: none; transform: translateY(-1px); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn.primary {
+    background: var(--accent); border-color: var(--accent); color: #0a0c10;
+  }
   .btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
   .btn svg { width: 18px; height: 18px; }
 
   .meta { color: var(--muted); font-size: 0.85rem; margin-top: 1rem; }
-  .meta code { font-size: 0.85em; }
 
-  /* Section */
-  section { padding: 4rem 0; border-top: 1px solid var(--border); }
-  section h2 { font-size: 1.8rem; margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  section { padding: 4.5rem 0; border-top: 1px solid var(--border); }
+  section h2 {
+    font-size: 1.6rem;
+    margin: 0 0 0.5rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
   section h2 .accent { color: var(--accent2); }
-  section .sub { color: var(--muted); margin: 0 0 2rem; }
+  section .sub { color: var(--muted); margin: 0 0 2rem; font-size: 0.95rem; }
 
-  /* Feature grid */
   .features {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
   .feature {
     background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.25rem;
-    transition: border-color 0.15s ease;
-  }
-  .feature:hover { border-color: var(--accent); }
-  .feature .icon { font-size: 1.6rem; margin-bottom: 0.5rem; }
-  .feature h3 { font-size: 1.05rem; margin: 0 0 0.4rem; }
-  .feature p { color: var(--muted); font-size: 0.9rem; margin: 0; }
-
-  /* Steps */
-  .steps { display: grid; gap: 1rem; counter-reset: step; }
-  .step {
-    display: grid; grid-template-columns: auto 1fr; gap: 1rem;
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 1.25rem;
-  }
-  .step .num {
-    counter-increment: step;
-    background: var(--accent); color: white;
-    width: 32px; height: 32px; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 0.95rem;
-  }
-  .step .num::before { content: counter(step); }
-  .step h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
-  .step p { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.5rem; }
-
-  /* Download cards */
-  .downloads {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 1rem;
-    margin-top: 2rem;
-  }
-  .dl {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
     padding: 1.5rem;
-    text-align: center;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease;
   }
-  .dl:hover { border-color: var(--accent); transform: translateY(-2px); }
-  .dl .os { font-size: 2.5rem; margin-bottom: 0.5rem; }
-  .dl h3 { margin: 0 0 0.3rem; }
-  .dl .arch { color: var(--muted); font-size: 0.85rem; margin-bottom: 1rem; }
-  .dl .size { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; }
+  .feature:hover { background: var(--panel2); }
+  .feature-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: var(--accent-dim);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 0.75rem;
+  }
+  .feature-icon svg { width: 18px; height: 18px; stroke: var(--accent2); fill: none; stroke-width: 2; }
+  .feature h3 { font-size: 1rem; margin: 0 0 0.4rem; font-weight: 600; }
+  .feature p { color: var(--muted); font-size: 0.88rem; margin: 0; line-height: 1.55; }
 
-  /* Stats */
   .stats {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 1rem; margin: 2rem 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    margin: 2rem 0;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
   .stat {
-    background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(34,211,238,0.05));
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.5rem;
+    background: var(--panel);
+    padding: 1.75rem 1.5rem;
     text-align: center;
   }
   .stat .v { font-size: 2rem; font-weight: 800; color: var(--accent2); font-variant-numeric: tabular-nums; }
   .stat .l { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
 
-  /* Diagram */
   .diagram {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin: 1.5rem 0;
     overflow-x: auto;
   }
   .mermaid { background: transparent; }
 
-  /* Footer */
+  .steps {
+    display: grid;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 1rem;
+    background: var(--panel);
+    padding: 1.5rem;
+  }
+  .step:hover { background: var(--panel2); }
+  .step .num {
+    background: var(--accent-dim);
+    color: var(--accent2);
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1rem;
+  }
+  .step h3 { margin: 0 0 0.3rem; font-size: 1rem; font-weight: 600; }
+  .step p { color: var(--muted); font-size: 0.88rem; margin: 0 0 0.5rem; }
+
+  .downloads {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 2rem;
+  }
+  .dl {
+    background: var(--panel);
+    padding: 1.75rem 1.5rem;
+    text-align: center;
+    transition: background 0.15s ease;
+  }
+  .dl:hover { background: var(--panel2); }
+  .dl .os-icon {
+    width: 44px; height: 44px;
+    margin: 0 auto 0.75rem;
+    border-radius: 10px;
+    background: var(--accent-dim);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dl .os-icon svg { width: 22px; height: 22px; stroke: var(--accent2); fill: none; stroke-width: 1.5; }
+  .dl h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+  .dl .arch { color: var(--muted); font-size: 0.82rem; margin-bottom: 1rem; }
+  .dl .size { color: var(--muted); font-size: 0.78rem; margin-top: 0.5rem; }
+
+  .worth-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .worth-item {
+    background: var(--panel);
+    padding: 1.5rem;
+  }
+  .worth-item:hover { background: var(--panel2); }
+  .worth-item .worth-icon {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+  .worth-item.good .worth-icon { background: rgba(34, 197, 94, 0.12); color: var(--good); }
+  .worth-item.bad .worth-icon { background: rgba(245, 158, 11, 0.12); color: var(--warn); }
+  .worth-item h3 { font-size: 0.95rem; margin: 0 0 0.3rem; font-weight: 600; }
+  .worth-item p { color: var(--muted); font-size: 0.85rem; margin: 0; line-height: 1.5; }
+
   footer {
-    padding: 3rem 0; text-align: center;
+    padding: 3rem 0;
+    text-align: center;
     border-top: 1px solid var(--border);
-    color: var(--muted); font-size: 0.9rem;
+    color: var(--muted);
+    font-size: 0.88rem;
   }
   footer a { color: var(--muted); margin: 0 0.5rem; }
   footer a:hover { color: var(--text); }
@@ -183,13 +289,15 @@
 <body>
 
 <header class="hero">
-  <div class="wrap">
-    <img src="./assets/icon.png" alt="CodeNexum" />
+  <div class="wrap hero-inner">
+    <div class="hero-logo">
+      <img src="./assets/icon.png" alt="CodeNexum" />
+    </div>
     <h1>CodeNexum</h1>
     <p class="tag">Code index + context compression for <a href="https://opencode.ai">opencode</a></p>
     <p class="lede">
       Your model knows a lot. Your context doesn't.<br/>
-      CodeNexum cuts tool output tokens by <strong>40–80%</strong> with FTS5 search, semantic summaries,
+      CodeNexum cuts tool output tokens by <strong>40-80%</strong> with FTS5 search, semantic summaries,
       and a live savings dashboard — without losing a shred of accuracy.
     </p>
     <div class="cta">
@@ -203,7 +311,7 @@
       </a>
     </div>
     <p class="meta">
-      Open source · MIT · <a href="https://github.com/madkoding/codenexum/releases/latest">latest release</a>
+      Open source &middot; MIT &middot; <a href="https://github.com/madkoding/codenexum/releases/latest">latest release</a>
     </p>
   </div>
 </header>
@@ -226,15 +334,51 @@
     <h2>What you <span class="accent">get</span></h2>
     <p class="sub">Every feature is enabled by default. Nothing to configure to start saving tokens.</p>
     <div class="features">
-      <div class="feature"><div class="icon">🔥</div><h3>FTS5 + BM25 index</h3><p>Local SQLite, sub-millisecond search. Your code becomes searchable, not just readable.</p></div>
-      <div class="feature"><div class="icon">🧠</div><h3>Semantic summaries</h3><p>800-line test log → 1 line: <code>8 passed, 3 failed</code>. The model learns what it needs.</p></div>
-      <div class="feature"><div class="icon">✂️</div><h3>Smart compression</h3><p>Strip ANSI colors, collapse repeated lines, trim stack indent. The details that cost tokens and add nothing.</p></div>
-      <div class="feature"><div class="icon">🧩</div><h3>Snippet substitution</h3><p><code>read foo.ts</code> returns the indexed symbols (functions, classes) instead of the whole file.</p></div>
-      <div class="feature"><div class="icon">🔍</div><h3>Indexed grep/glob</h3><p>Search the real code, not your noisy filesystem. Loop-detection stops repeat reads.</p></div>
-      <div class="feature"><div class="icon">🔗</div><h3>Callers &amp; impact</h3><p>Ask "who uses this function?" and get the list instantly, no manual navigation.</p></div>
-      <div class="feature"><div class="icon">💾</div><h3>Smart cache</h3><p>In-memory + on-disk. Repeated reads cost nothing. Persists across sessions.</p></div>
-      <div class="feature"><div class="icon">📊</div><h3>Live dashboard</h3><p>Tokens saved, top queries, hot files, index health. See exactly where the savings come from.</p></div>
-      <div class="feature"><div class="icon">🪶</div><h3>Thin plugin</h3><p>~120 LOC. All indexing logic lives in the app — the plugin is just an MCP proxy.</p></div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></div>
+        <h3>FTS5 + BM25 index</h3>
+        <p>Local SQLite, sub-millisecond search. Your code becomes searchable, not just readable.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <h3>Semantic summaries</h3>
+        <p>800-line test log to 1 line: <code>8 passed, 3 failed</code>. The model learns what it needs.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M11 4H4v7"/><path d="M13 20h7v-7"/><path d="M3 21l7-7"/><path d="M21 3l-7 7"/></svg></div>
+        <h3>Smart compression</h3>
+        <p>Strip ANSI colors, collapse repeated lines, trim stack indent. The details that cost tokens and add nothing.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+        <h3>Snippet substitution</h3>
+        <p><code>read foo.ts</code> returns the indexed symbols (functions, classes) instead of the whole file.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></div>
+        <h3>Indexed grep/glob</h3>
+        <p>Search the real code, not your noisy filesystem. Loop-detection stops repeat reads.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+        <h3>Callers and impact</h3>
+        <p>Ask "who uses this function?" and get the list instantly, no manual navigation.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><path d="M6 6h.01M6 18h.01"/></svg></div>
+        <h3>Smart cache</h3>
+        <p>In-memory + on-disk. Repeated reads cost nothing. Persists across sessions.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>
+        <h3>Live dashboard</h3>
+        <p>Tokens saved, top queries, hot files, index health. See exactly where the savings come from.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <h3>Thin plugin</h3>
+        <p>~120 LOC. All indexing logic lives in the app — the plugin is just an MCP proxy.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -286,29 +430,29 @@ flowchart LR
     <p class="sub">Free, open source, runs locally. Pick your platform.</p>
     <div class="downloads">
       <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.0-arm64.dmg">
-        <div class="os">🍎</div>
+        <div class="os-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
         <h3>macOS</h3>
-        <div class="arch">Apple Silicon · DMG</div>
+        <div class="arch">Apple Silicon &middot; DMG</div>
         <div class="btn primary">Download .dmg</div>
         <div class="size">~122 MB</div>
       </a>
       <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.0.exe">
-        <div class="os">🪟</div>
+        <div class="os-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></div>
         <h3>Windows</h3>
-        <div class="arch">x64 · portable</div>
+        <div class="arch">x64 &middot; portable</div>
         <div class="btn primary">Download .exe</div>
         <div class="size">~96 MB</div>
       </a>
       <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.0.AppImage">
-        <div class="os">🐧</div>
+        <div class="os-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
         <h3>Linux</h3>
-        <div class="arch">x64 · AppImage</div>
+        <div class="arch">x64 &middot; AppImage</div>
         <div class="btn primary">Download .AppImage</div>
         <div class="size">~130 MB</div>
       </a>
     </div>
     <p class="meta" style="text-align:center; margin-top:2rem">
-      All releases: <a href="https://github.com/madkoding/codenexum/releases">github.com/madkoding/codenexum/releases</a> ·
+      All releases: <a href="https://github.com/madkoding/codenexum/releases">github.com/madkoding/codenexum/releases</a> &middot;
       SHA256 checksums included in each release
     </p>
   </div>
@@ -319,14 +463,14 @@ flowchart LR
     <h2>Get started in <span class="accent">3 steps</span></h2>
     <div class="steps">
       <div class="step">
-        <div class="num"></div>
+        <div class="num">1</div>
         <div>
           <h3>Install the app</h3>
           <p>Open the downloaded file and launch CodeNexum. It runs in the background with a tray icon.</p>
         </div>
       </div>
       <div class="step">
-        <div class="num"></div>
+        <div class="num">2</div>
         <div>
           <h3>Add the plugin to opencode</h3>
           <p>In your <code>opencode.json</code>:</p>
@@ -337,7 +481,7 @@ flowchart LR
         </div>
       </div>
       <div class="step">
-        <div class="num"></div>
+        <div class="num">3</div>
         <div>
           <h3>Watch the savings roll in</h3>
           <p>Open the CodeNexum window to see live metrics: tokens saved, top queries, hot files, and the index health of every registered project.</p>
@@ -350,13 +494,33 @@ flowchart LR
 <section>
   <div class="wrap">
     <h2>When is it <span class="accent">worth it</span>?</h2>
-    <p class="sub">Rule of thumb: break-even at 3–4 tool calls. Everything beyond is net gain.</p>
-    <div class="features">
-      <div class="feature"><div class="icon">✅</div><h3>Long sessions, 20+ tool calls</h3><p>Massive savings. The compression alone pays for itself many times over.</p></div>
-      <div class="feature"><div class="icon">✅</div><h3>Mid-size project exploration</h3><p>First-time agent exploration of an unfamiliar repo — biggest win.</p></div>
-      <div class="feature"><div class="icon">✅</div><h3>Debugging test/build output</h3><p>Semantic compression turns 800-line test logs into 1-line summaries.</p></div>
-      <div class="feature"><div class="icon">❌</div><h3>One quick question, no tools</h3><p>Plugin overhead &gt; savings. Skip it.</p></div>
-      <div class="feature"><div class="icon">❌</div><h3>Tiny projects (&lt;20 files)</h3><p>Nothing to index. Skip it.</p></div>
+    <p class="sub">Rule of thumb: break-even at 3-4 tool calls. Everything beyond is net gain.</p>
+    <div class="worth-grid">
+      <div class="worth-item good">
+        <div class="worth-icon">+</div>
+        <h3>Long sessions, 20+ tool calls</h3>
+        <p>Massive savings. The compression alone pays for itself many times over.</p>
+      </div>
+      <div class="worth-item good">
+        <div class="worth-icon">+</div>
+        <h3>Mid-size project exploration</h3>
+        <p>First-time agent exploration of an unfamiliar repo — biggest win.</p>
+      </div>
+      <div class="worth-item good">
+        <div class="worth-icon">+</div>
+        <h3>Debugging test/build output</h3>
+        <p>Semantic compression turns 800-line test logs into 1-line summaries.</p>
+      </div>
+      <div class="worth-item bad">
+        <div class="worth-icon">-</div>
+        <h3>One quick question, no tools</h3>
+        <p>Plugin overhead &gt; savings. Skip it.</p>
+      </div>
+      <div class="worth-item bad">
+        <div class="worth-icon">-</div>
+        <h3>Tiny projects (&lt;20 files)</h3>
+        <p>Nothing to index. Skip it.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -364,12 +528,12 @@ flowchart LR
 <footer>
   <div class="wrap">
     <p>
-      <strong>CodeNexum</strong> — MIT licensed · Built for opencode
+      <strong>CodeNexum</strong> &mdash; MIT licensed &middot; Built for opencode
     </p>
     <p>
-      <a href="https://github.com/madkoding/codenexum">GitHub</a> ·
-      <a href="https://github.com/madkoding/codenexum/releases">Releases</a> ·
-      <a href="https://github.com/madkoding/codenexum/issues">Issues</a> ·
+      <a href="https://github.com/madkoding/codenexum">GitHub</a> &middot;
+      <a href="https://github.com/madkoding/codenexum/releases">Releases</a> &middot;
+      <a href="https://github.com/madkoding/codenexum/issues">Issues</a> &middot;
       <a href="./README.html">Full README</a>
     </p>
   </div>
@@ -377,7 +541,7 @@ flowchart LR
 
 <script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-  mermaid.initialize({ startOnLoad: true, theme: "dark", themeVariables: { primaryColor: "#3b82f6", primaryTextColor: "#e6e9ef", primaryBorderColor: "#1f2937", lineColor: "#8b92a8", secondaryColor: "#171b22", tertiaryColor: "#12151b" } });
+  mermaid.initialize({ startOnLoad: true, theme: "dark", themeVariables: { primaryColor: "#2dd4bf", primaryTextColor: "#e2e5ed", primaryBorderColor: "#1e2028", lineColor: "#7a8199", secondaryColor: "#16181f", tertiaryColor: "#111318" } });
 </script>
 
 </body>
