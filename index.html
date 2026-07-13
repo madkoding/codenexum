@@ -8,22 +8,26 @@
 <meta property="og:title" content="CodeNexum — code index + context compression for opencode" />
 <meta property="og:description" content="Cuts tool output tokens by 40-80%. Free, open source, cross-platform." />
 <meta property="og:image" content="./assets/icon.png" />
-<meta name="theme-color" content="#0c0e14" />
+<meta name="theme-color" content="#0b0d10" />
 <link rel="icon" href="./assets/icon.png" />
 <style>
   :root {
-    --bg: #0c0e14;
+    --bg: #0b0d10;
     --bg-2: #0f1118;
     --panel: #14171f;
-    --line: #1e2129;
-    --text: #d8dce6;
-    --text-dim: #8b91a3;
+    --line: #1f2937;
+    --line-2: #27272a;
+    --text: #e6e9ef;
+    --text-dim: #8b92a8;
     --muted: #5a6072;
-    --teal: #2dd4bf;
-    --teal-bright: #5eead4;
-    --teal-dim: rgba(45, 212, 191, 0.08);
-    --teal-glow: rgba(45, 212, 191, 0.35);
-    --red: #f87171;
+    --accent: #3b82f6;
+    --accent-bright: #60a5fa;
+    --accent-dim: rgba(59, 130, 246, 0.08);
+    --accent-glow: rgba(59, 130, 246, 0.35);
+    --good: #22c55e;
+    --warn: #f59e0b;
+    --cyan: #06b6d4;
+    --pink: #ec4899;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -39,7 +43,7 @@
     font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-feature-settings: "calt" 0;
   }
-  a { color: var(--teal-bright); text-decoration: none; }
+  a { color: var(--accent-bright); text-decoration: none; }
   a:hover { text-decoration: underline; }
   code {
     font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -48,7 +52,7 @@
     border-radius: 4px;
     font-size: 0.88em;
     border: 1px solid var(--line);
-    color: var(--teal-bright);
+    color: var(--accent-bright);
   }
   pre {
     font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -109,8 +113,8 @@
   }
   .hero-tag .dot {
     width: 6px; height: 6px; border-radius: 50%;
-    background: var(--teal);
-    box-shadow: 0 0 8px var(--teal-glow);
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
     animation: pulse 2s ease-in-out infinite;
   }
   @keyframes pulse {
@@ -125,7 +129,7 @@
     line-height: 1.05;
   }
   .hero h1 .accent {
-    background: linear-gradient(135deg, var(--teal) 0%, #67e8f9 50%, var(--teal-bright) 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, #93c5fd 50%, var(--accent-bright) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -151,17 +155,17 @@
     cursor: pointer;
     font-family: inherit;
   }
-  .btn:hover { background: var(--panel); border-color: var(--teal); text-decoration: none; }
+  .btn:hover { background: var(--panel); border-color: var(--accent); text-decoration: none; }
   .btn.primary {
-    background: var(--teal);
-    border-color: var(--teal);
-    color: #0c0e14;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
     font-weight: 600;
   }
   .btn.primary:hover {
-    background: var(--teal-bright);
-    border-color: var(--teal-bright);
-    box-shadow: 0 0 24px var(--teal-glow);
+    background: var(--accent-bright);
+    border-color: var(--accent-bright);
+    box-shadow: 0 0 24px var(--accent-glow);
   }
   .btn svg { width: 16px; height: 16px; }
   .btn .kbd {
@@ -205,8 +209,8 @@
     line-height: 1.7;
     color: var(--text-dim);
   }
-  .terminal-body .prompt { color: var(--teal); }
-  .terminal-body .path { color: #67e8f9; }
+  .terminal-body .prompt { color: var(--accent); }
+  .terminal-body .path { color: #60a5fa; }
   .terminal-body .flag { color: #fbbf24; }
   .terminal-body .string { color: #a5d6ff; }
   .terminal-body .comment { color: var(--muted); }
@@ -217,11 +221,11 @@
     margin-top: 0.75rem;
     padding: 0.5rem 0.75rem;
     background: var(--panel);
-    border-left: 2px solid var(--teal);
+    border-left: 2px solid var(--accent);
     border-radius: 0 4px 4px 0;
     color: var(--text);
   }
-  .terminal-body .stats b { color: var(--teal-bright); }
+  .terminal-body .stats b { color: var(--accent-bright); }
 
   /* Section base */
   section { padding: 6rem 0; position: relative; }
@@ -231,7 +235,7 @@
   }
   .section-head .num {
     font-family: ui-monospace, monospace;
-    color: var(--teal);
+    color: var(--accent);
     font-size: 0.85rem;
     font-weight: 500;
   }
@@ -259,7 +263,7 @@
   .two-col p { color: var(--text-dim); font-size: 1.02rem; margin: 0 0 1rem; }
   .two-col p strong { color: var(--text); font-weight: 500; }
   .pull-stat {
-    border-left: 2px solid var(--teal);
+    border-left: 2px solid var(--accent);
     padding-left: 1.5rem;
     margin: 2rem 0;
   }
@@ -292,7 +296,7 @@
   .feat-icon {
     width: 32px; height: 32px;
     margin-bottom: 1rem;
-    color: var(--teal);
+    color: var(--accent);
   }
   .feat-icon svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.5; }
   .feat h3 {
@@ -325,7 +329,7 @@
   .step:last-child { border-bottom: 1px solid var(--line); }
   .step-num {
     font-family: ui-monospace, monospace;
-    color: var(--teal);
+    color: var(--accent);
     font-size: 0.85rem;
     font-weight: 500;
     padding-top: 0.15rem;
@@ -359,7 +363,7 @@
     display: block;
   }
   .dl:hover {
-    border-color: var(--teal);
+    border-color: var(--accent);
     transform: translateY(-2px);
     text-decoration: none;
   }
@@ -371,7 +375,7 @@
     font-weight: 600;
     font-size: 1rem;
   }
-  .dl-icon { color: var(--teal); width: 20px; height: 20px; }
+  .dl-icon { color: var(--accent); width: 20px; height: 20px; }
   .dl-icon svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.5; }
   .dl-meta {
     font-family: ui-monospace, monospace;
@@ -380,7 +384,7 @@
     margin-bottom: 1rem;
   }
   .dl-cta {
-    color: var(--teal-bright);
+    color: var(--accent-bright);
     font-size: 0.85rem;
     font-weight: 500;
     display: flex; align-items: center; gap: 0.3rem;
@@ -797,7 +801,7 @@ sequenceDiagram
       primaryColor: "#14171f",
       primaryTextColor: "#d8dce6",
       primaryBorderColor: "#1e2129",
-      lineColor: "#2dd4bf",
+      lineColor: "#3b82f6",
       secondaryColor: "#0f1118",
       tertiaryColor: "#14171f",
       fontFamily: "JetBrains Mono, ui-monospace, monospace",
