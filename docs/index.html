@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CodeNexum — code index + context compression for opencode</title>
+<meta name="description" content="CodeNexum is a code indexer + context compression engine for opencode. Cuts tool output tokens by 40-80% with FTS5 search, semantic summaries, and live savings dashboard." />
+<meta property="og:title" content="CodeNexum — code index + context compression for opencode" />
+<meta property="og:description" content="Cuts tool output tokens by 40-80%. Free, open source, cross-platform." />
+<meta property="og:image" content="./assets/icon.png" />
+<meta name="theme-color" content="#0b0d10" />
+<link rel="icon" href="./assets/icon.png" />
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #12151b;
+    --panel2: #171b22;
+    --text: #e6e9ef;
+    --muted: #8b92a8;
+    --accent: #3b82f6;
+    --accent2: #60a5fa;
+    --good: #22c55e;
+    --warn: #f59e0b;
+    --border: #1f2937;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--panel2);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    border: 1px solid var(--border);
+  }
+  pre { padding: 1rem; overflow-x: auto; line-height: 1.5; }
+  pre code { padding: 0; border: 0; background: transparent; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Hero */
+  .hero {
+    padding: 5rem 0 4rem;
+    text-align: center;
+    background:
+      radial-gradient(800px 400px at 50% 0%, rgba(59,130,246,0.15), transparent 60%),
+      radial-gradient(600px 300px at 80% 20%, rgba(34,211,238,0.08), transparent 60%);
+  }
+  .hero img { width: 140px; height: 140px; filter: drop-shadow(0 8px 32px rgba(59,130,246,0.3)); }
+  .hero h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); margin: 1.5rem 0 0.5rem; font-weight: 800; letter-spacing: -0.02em; }
+  .hero .tag { font-size: 1.2rem; color: var(--muted); margin: 0 0 2rem; }
+  .hero .lede { font-size: 1.15rem; max-width: 720px; margin: 0 auto 2.5rem; color: #c8cdd8; }
+
+  /* CTA */
+  .cta { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin: 1.5rem 0 1rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.85rem 1.4rem; border-radius: 10px;
+    font-weight: 600; font-size: 0.95rem;
+    border: 1px solid var(--border);
+    background: var(--panel); color: var(--text);
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--panel2); border-color: var(--accent); text-decoration: none; transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+  .btn svg { width: 18px; height: 18px; }
+
+  .meta { color: var(--muted); font-size: 0.85rem; margin-top: 1rem; }
+  .meta code { font-size: 0.85em; }
+
+  /* Section */
+  section { padding: 4rem 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 1.8rem; margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  section h2 .accent { color: var(--accent2); }
+  section .sub { color: var(--muted); margin: 0 0 2rem; }
+
+  /* Feature grid */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+  }
+  .feature {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: border-color 0.15s ease;
+  }
+  .feature:hover { border-color: var(--accent); }
+  .feature .icon { font-size: 1.6rem; margin-bottom: 0.5rem; }
+  .feature h3 { font-size: 1.05rem; margin: 0 0 0.4rem; }
+  .feature p { color: var(--muted); font-size: 0.9rem; margin: 0; }
+
+  /* Steps */
+  .steps { display: grid; gap: 1rem; counter-reset: step; }
+  .step {
+    display: grid; grid-template-columns: auto 1fr; gap: 1rem;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.25rem;
+  }
+  .step .num {
+    counter-increment: step;
+    background: var(--accent); color: white;
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.95rem;
+  }
+  .step .num::before { content: counter(step); }
+  .step h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+  .step p { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.5rem; }
+
+  /* Download cards */
+  .downloads {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+  .dl {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.15s ease;
+  }
+  .dl:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .dl .os { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .dl h3 { margin: 0 0 0.3rem; }
+  .dl .arch { color: var(--muted); font-size: 0.85rem; margin-bottom: 1rem; }
+  .dl .size { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; }
+
+  /* Stats */
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem; margin: 2rem 0;
+  }
+  .stat {
+    background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(34,211,238,0.05));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+  .stat .v { font-size: 2rem; font-weight: 800; color: var(--accent2); font-variant-numeric: tabular-nums; }
+  .stat .l { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+
+  /* Diagram */
+  .diagram {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0;
+    overflow-x: auto;
+  }
+  .mermaid { background: transparent; }
+
+  /* Footer */
+  footer {
+    padding: 3rem 0; text-align: center;
+    border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.9rem;
+  }
+  footer a { color: var(--muted); margin: 0 0.5rem; }
+  footer a:hover { color: var(--text); }
+
+  @media (max-width: 600px) {
+    .hero { padding: 3rem 0 2rem; }
+    section { padding: 2.5rem 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img src="./assets/icon.png" alt="CodeNexum" />
+    <h1>CodeNexum</h1>
+    <p class="tag">Code index + context compression for <a href="https://opencode.ai">opencode</a></p>
+    <p class="lede">
+      Your model knows a lot. Your context doesn't.<br/>
+      CodeNexum cuts tool output tokens by <strong>40–80%</strong> with FTS5 search, semantic summaries,
+      and a live savings dashboard — without losing a shred of accuracy.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#download">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Download for free
+      </a>
+      <a class="btn" href="https://github.com/madkoding/codenexum">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1.1 1.9 2.9 1.4 3.6 1 .1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+        View on GitHub
+      </a>
+    </div>
+    <p class="meta">
+      Open source · MIT · <a href="https://github.com/madkoding/codenexum/releases/latest">latest release</a>
+    </p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>The <span class="accent">problem</span></h2>
+    <p class="sub">When your agent explores a repo, it gets buried under noise.</p>
+    <div class="stats">
+      <div class="stat"><div class="v">800</div><div class="l">lines in a typical test log</div></div>
+      <div class="stat"><div class="v">4,000+</div><div class="l">lines from a noisy grep</div></div>
+      <div class="stat"><div class="v">~70%</div><div class="l">of those tokens are useless</div></div>
+    </div>
+    <p>CodeNexum intercepts that noise at the tool boundary and replaces it with indexed chunks, semantic summaries, and structured snippets. The model gets the <em>signal</em>, not the noise.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>What you <span class="accent">get</span></h2>
+    <p class="sub">Every feature is enabled by default. Nothing to configure to start saving tokens.</p>
+    <div class="features">
+      <div class="feature"><div class="icon">🔥</div><h3>FTS5 + BM25 index</h3><p>Local SQLite, sub-millisecond search. Your code becomes searchable, not just readable.</p></div>
+      <div class="feature"><div class="icon">🧠</div><h3>Semantic summaries</h3><p>800-line test log → 1 line: <code>8 passed, 3 failed</code>. The model learns what it needs.</p></div>
+      <div class="feature"><div class="icon">✂️</div><h3>Smart compression</h3><p>Strip ANSI colors, collapse repeated lines, trim stack indent. The details that cost tokens and add nothing.</p></div>
+      <div class="feature"><div class="icon">🧩</div><h3>Snippet substitution</h3><p><code>read foo.ts</code> returns the indexed symbols (functions, classes) instead of the whole file.</p></div>
+      <div class="feature"><div class="icon">🔍</div><h3>Indexed grep/glob</h3><p>Search the real code, not your noisy filesystem. Loop-detection stops repeat reads.</p></div>
+      <div class="feature"><div class="icon">🔗</div><h3>Callers &amp; impact</h3><p>Ask "who uses this function?" and get the list instantly, no manual navigation.</p></div>
+      <div class="feature"><div class="icon">💾</div><h3>Smart cache</h3><p>In-memory + on-disk. Repeated reads cost nothing. Persists across sessions.</p></div>
+      <div class="feature"><div class="icon">📊</div><h3>Live dashboard</h3><p>Tokens saved, top queries, hot files, index health. See exactly where the savings come from.</p></div>
+      <div class="feature"><div class="icon">🪶</div><h3>Thin plugin</h3><p>~120 LOC. All indexing logic lives in the app — the plugin is just an MCP proxy.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How it <span class="accent">works</span></h2>
+    <p class="sub">The interception loop, in three steps.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant OC as opencode
+    participant P as @codenexum/plugin
+    participant APP as CodeNexum
+    participant DB as SQLite
+    U->>OC: "find all callers of auth()"
+    OC->>P: tool.execute.before
+    P->>P: detect candidate
+    OC->>OC: native read
+    OC-->>P: tool.execute.after
+    P->>APP: cm_read_snippet
+    APP->>DB: SELECT chunks
+    DB-->>APP: indexed symbols
+    APP-->>P: compact snippet
+    P-->>OC: substitute (smaller)
+    P->>APP: log savings
+      </pre>
+    </div>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+  A[Tool call] --> B{Interception<br/>enabled?}
+  B -- no --> Z[Pass through]
+  B -- yes --> C[Query indexed<br/>snippet]
+  C --> D{Compact<br/>snippet?}
+  D -- no --> Z
+  D -- yes, smaller --> E[Substitute]
+  D -- yes, larger --> Z
+  E --> F[Log usage event]
+      </pre>
+    </div>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <h2><span class="accent">Download</span></h2>
+    <p class="sub">Free, open source, runs locally. Pick your platform.</p>
+    <div class="downloads">
+      <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.0-arm64.dmg">
+        <div class="os">🍎</div>
+        <h3>macOS</h3>
+        <div class="arch">Apple Silicon · DMG</div>
+        <div class="btn primary">Download .dmg</div>
+        <div class="size">~122 MB</div>
+      </a>
+      <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.0.exe">
+        <div class="os">🪟</div>
+        <h3>Windows</h3>
+        <div class="arch">x64 · portable</div>
+        <div class="btn primary">Download .exe</div>
+        <div class="size">~96 MB</div>
+      </a>
+      <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.0.AppImage">
+        <div class="os">🐧</div>
+        <h3>Linux</h3>
+        <div class="arch">x64 · AppImage</div>
+        <div class="btn primary">Download .AppImage</div>
+        <div class="size">~130 MB</div>
+      </a>
+    </div>
+    <p class="meta" style="text-align:center; margin-top:2rem">
+      All releases: <a href="https://github.com/madkoding/codenexum/releases">github.com/madkoding/codenexum/releases</a> ·
+      SHA256 checksums included in each release
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Get started in <span class="accent">3 steps</span></h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h3>Install the app</h3>
+          <p>Open the downloaded file and launch CodeNexum. It runs in the background with a tray icon.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h3>Add the plugin to opencode</h3>
+          <p>In your <code>opencode.json</code>:</p>
+          <pre><code>{
+  "plugins": ["@codenexum/plugin"]
+}</code></pre>
+          <p>Restart opencode. The plugin auto-discovers the app.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h3>Watch the savings roll in</h3>
+          <p>Open the CodeNexum window to see live metrics: tokens saved, top queries, hot files, and the index health of every registered project.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>When is it <span class="accent">worth it</span>?</h2>
+    <p class="sub">Rule of thumb: break-even at 3–4 tool calls. Everything beyond is net gain.</p>
+    <div class="features">
+      <div class="feature"><div class="icon">✅</div><h3>Long sessions, 20+ tool calls</h3><p>Massive savings. The compression alone pays for itself many times over.</p></div>
+      <div class="feature"><div class="icon">✅</div><h3>Mid-size project exploration</h3><p>First-time agent exploration of an unfamiliar repo — biggest win.</p></div>
+      <div class="feature"><div class="icon">✅</div><h3>Debugging test/build output</h3><p>Semantic compression turns 800-line test logs into 1-line summaries.</p></div>
+      <div class="feature"><div class="icon">❌</div><h3>One quick question, no tools</h3><p>Plugin overhead &gt; savings. Skip it.</p></div>
+      <div class="feature"><div class="icon">❌</div><h3>Tiny projects (&lt;20 files)</h3><p>Nothing to index. Skip it.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      <strong>CodeNexum</strong> — MIT licensed · Built for opencode
+    </p>
+    <p>
+      <a href="https://github.com/madkoding/codenexum">GitHub</a> ·
+      <a href="https://github.com/madkoding/codenexum/releases">Releases</a> ·
+      <a href="https://github.com/madkoding/codenexum/issues">Issues</a> ·
+      <a href="./README.html">Full README</a>
+    </p>
+  </div>
+</footer>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "dark", themeVariables: { primaryColor: "#3b82f6", primaryTextColor: "#e6e9ef", primaryBorderColor: "#1f2937", lineColor: "#8b92a8", secondaryColor: "#171b22", tertiaryColor: "#12151b" } });
+</script>
+
+</body>
+</html>
