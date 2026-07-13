@@ -391,6 +391,41 @@
   }
   .dl-cta svg { width: 14px; height: 14px; }
 
+  /* macOS gatekeeper note */
+  .mac-note {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--warn);
+    border-radius: 8px;
+  }
+  .mac-note-icon {
+    flex-shrink: 0;
+    color: var(--warn);
+    width: 20px; height: 20px;
+    margin-top: 0.1rem;
+  }
+  .mac-note-icon svg { width: 100%; height: 100%; }
+  .mac-note strong {
+    display: block;
+    color: var(--text);
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+  .mac-note p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+  .mac-note code {
+    font-size: 0.82em;
+  }
+
   /* Worth it */
   .worth {
     display: grid;
@@ -689,6 +724,15 @@ sequenceDiagram
       <div class="dl-meta">x64 &middot; AppImage &middot; 130 MB</div>
       <div class="dl-cta">Download .AppImage &rarr;</div>
     </a>
+  </div>
+  <div class="mac-note">
+    <div class="mac-note-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div>
+      <strong>macOS note</strong>
+      <p>CodeNexum isn't signed with an Apple Developer ID yet, so Gatekeeper will block the .dmg on first open. To run it: open the .dmg, drag the app to Applications, then in Terminal run <code>xattr -cr /Applications/CodeNexum.app</code> and launch it normally. The app is open source — you can verify the build yourself.</p>
+    </div>
   </div>
   <p style="text-align:center; color: var(--muted); font-size: 0.85rem; margin-top: 2rem; font-family: ui-monospace, monospace;">
     <a href="https://github.com/madkoding/codenexum/releases">All releases</a> &middot; SHA256 included &middot; auto-update on launch
