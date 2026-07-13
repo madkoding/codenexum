@@ -1,36 +1,31 @@
 {
-  "name": "@madtech/opencode-context-manager-plugin",
-  "version": "2.1.3",
-  "description": "opencode plugin for context management in large projects",
-  "license": "MIT",
-  "main": "plugins/@madtech-opencode-context-manager-plugin.ts",
-  "exports": {
-    ".": "./plugins/@madtech-opencode-context-manager-plugin.ts",
-    "./server": "./plugins/@madtech-opencode-context-manager-plugin.ts"
-  },
-  "files": [
-    "plugins/",
-    "src/",
-    "skills/",
-    "dashboard/dist/"
+  "name": "@codenexum/electron",
+  "version": "0.99.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/index.cjs",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "dashboard:dev": "cd dashboard && bun run dev",
-    "dashboard:build": "cd dashboard && bun install && bun run build",
-    "prepublishOnly": "bun run dashboard:build",
-    "test:pack": "bash scripts/test-pack.sh"
-  },
-  "engines": {
-    "opencode": ">=1.0.0"
-  },
-  "dependencies": {
-    "@opencode-ai/plugin": "^1.17.0"
+    "typecheck": "tsc -b",
+    "test": "bun test packages/*/test apps/*/test",
+    "lint": "tsc -b",
+    "dev": "bun run --filter @codenexum/electron dev",
+    "package": "bun run --filter @codenexum/electron package"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.14",
-    "@types/node": "^26.1.1",
-    "typescript": "^7.0.2"
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@codenexum/core": "workspace:*",
+    "@codenexum/sql": "workspace:*",
+    "lru-cache": "^11",
+    "lucide-react": "^1.24.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1",
+    "recharts": "^3.9.2"
   }
 }

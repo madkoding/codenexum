@@ -1,8 +1,11 @@
+apps/electron/dist/
+apps/electron/out/
+apps/electron/build/icon.png
+apps/plugin/dist/
 node_modules/
-.vscode/
-.idea/
-*.log
-*.tgz
+dist/
 .opencode/
-dashboard/node_modules/
-dashboard/dist/
+.DS_Store
+*.log
+bun.lock.bak
+bun.lockb

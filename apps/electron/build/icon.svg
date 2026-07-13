@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b0d10"/>
+      <stop offset="100%" stop-color="#171b22"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0.5" y1="1" x2="0.5" y2="0">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="55%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#a5f3fc"/>
+    </linearGradient>
+    <linearGradient id="flameInner" x1="0.5" y1="1" x2="0.5" y2="0">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <path d="M256 64 C 200 152, 152 196, 152 280 C 152 360, 200 424, 256 448 C 312 424, 360 360, 360 280 C 360 196, 312 152, 256 64 Z" fill="url(#flame)" opacity="0.95"/>
+  <path d="M256 152 C 224 200, 200 232, 200 280 C 200 336, 224 376, 256 392 C 288 376, 312 336, 312 280 C 312 232, 288 200, 256 152 Z" fill="url(#flameInner)"/>
+  <path d="M256 232 C 240 264, 228 288, 228 312 C 228 344, 240 368, 256 376 C 272 368, 284 344, 284 312 C 284 288, 272 264, 256 232 Z" fill="#ecfeff" opacity="0.85"/>
+</svg>

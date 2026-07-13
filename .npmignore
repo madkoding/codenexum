@@ -1,11 +1,3 @@
-install.sh
-uninstall.sh
-test/
-tsconfig.json
-scripts/tokenize.py
-dashboard/src/
-dashboard/node_modules/
-dashboard/vite.config.ts
-dashboard/postcss.config.js
-dashboard/tailwind.config.ts
-dashboard/tsconfig.json
+apps/electron/dist/
+apps/electron/out/
+node_modules/

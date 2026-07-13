@@ -4,12 +4,23 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
+    "jsx": "react-jsx",
     "esModuleInterop": true,
-    "allowImportingTsExtensions": true,
-    "noUncheckedIndexedAccess": false,
-    "types": ["bun", "node"]
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "paths": {
+      "@codenexum/core": ["./packages/core/src"],
+      "@codenexum/core/*": ["./packages/core/src/*"],
+      "@codenexum/sql": ["./packages/sql/src"],
+      "@codenexum/sql/*": ["./packages/sql/src/*"],
+      "@codenexum/plugin": ["./apps/plugin/src"],
+      "@codenexum/plugin/*": ["./apps/plugin/src/*"],
+      "@codenexum/electron": ["./apps/electron/src"],
+      "@codenexum/electron/*": ["./apps/electron/src/*"]
+    }
   },
-  "include": ["src/**/*", "test/**/*", "plugins/**/*"]
+  "include": ["packages/*/src/**/*", "apps/*/src/**/*"]
 }

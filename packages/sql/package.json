@@ -1,0 +1,12 @@
+{
+  "name": "@codenexum/sql",
+  "version": "0.99.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": { "build": "tsc" },
+  "dependencies": {
+    "@codenexum/core": "workspace:*"
+  }
+}
