@@ -233,10 +233,24 @@ export function getGlobalAnalytics() {
         const f = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
         let zeroChunkFiles = 0
         try {
-          zeroChunkFiles = (db.prepare(`
-            SELECT count(*) as c FROM file_hashes fh
-            WHERE NOT EXISTS (SELECT 1 FROM chunks_fts cf WHERE cf.file = fh.file)
-          `).get() as any).c
+          // Use files_indexed (PK on file) for O(log n) membership check.
+          // chunks_fts.file is UNINDEXED in FTS5, so a subquery on chunks_fts
+          // degrades to a full virtual-table scan (was 17s on 178k chunks).
+          if (tableSet.has("files_indexed")) {
+            zeroChunkFiles = (db.prepare(`
+              SELECT count(*) as c FROM file_hashes fh
+              LEFT JOIN files_indexed fi ON fi.file = fh.file
+              WHERE fi.file IS NULL
+            `).get() as any).c
+          } else {
+            zeroChunkFiles = (db.prepare(`
+              SELECT count(*) as c FROM file_hashes fh
+              LEFT JOIN (
+                SELECT DISTINCT file FROM chunks_fts
+              ) cf ON cf.file = fh.file
+              WHERE cf.file IS NULL
+            `).get() as any).c
+          }
         } catch {}
         indexHealth.push({ id: proj.id, name: proj.name, path: proj.path, lastIndexed, chunks: c, files: f, zeroChunkFiles })
 

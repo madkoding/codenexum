@@ -51,20 +51,24 @@ function json(res: ServerResponse, data: any, status = 200) {
 }
 
 const CACHE_TTL_MS = 5000
-const _cache = new Map<string, { ts: number; data: any }>()
+// Dashboard and analytics aggregate across all project DBs and run a
+// (formerly) 17s subquery on 178k-chunk projects. Cache them longer
+// to avoid the user seeing a spinner on every React re-render.
+const CACHE_TTL_LONG_MS = 30_000
+const _cache = new Map<string, { ts: number; data: any; ttl: number }>()
 
 function cacheGet<T>(key: string): T | undefined {
   const e = _cache.get(key)
   if (!e) return undefined
-  if (Date.now() - e.ts > CACHE_TTL_MS) {
+  if (Date.now() - e.ts > e.ttl) {
     _cache.delete(key)
     return undefined
   }
   return e.data as T
 }
 
-function cacheSet(key: string, data: any): void {
-  _cache.set(key, { ts: Date.now(), data })
+function cacheSet(key: string, data: any, ttl = CACHE_TTL_MS): void {
+  _cache.set(key, { ts: Date.now(), data, ttl })
 }
 
 function cacheInvalidate(prefix?: string): void {
@@ -277,7 +281,7 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         const cached = cacheGet<any>("dashboard")
         if (cached) return { result: cached }
         const result = getDashboardState()
-        cacheSet("dashboard", result)
+        cacheSet("dashboard", result, CACHE_TTL_LONG_MS)
         return { result }
       }
 
@@ -285,7 +289,7 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         const cached = cacheGet<any>("analytics")
         if (cached) return { result: cached }
         const result = getGlobalAnalytics()
-        cacheSet("analytics", result)
+        cacheSet("analytics", result, CACHE_TTL_LONG_MS)
         return { result }
       }
 

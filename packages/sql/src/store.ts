@@ -66,6 +66,17 @@ export function initSchema(db: Db): void {
   )`)
   db.exec("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_file, target_symbol)")
   db.exec("CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_file, source_symbol)")
+
+  // ponytail: auxiliary denormalized index for O(1) file membership checks.
+  // chunks_fts.file is UNINDEXED (FTS5 can't index that column), so any
+  // "file in chunks_fts?" subquery degrades to a full virtual table scan.
+  // Mirror the distinct file list into files_indexed to make those checks
+  // O(log n) via the primary key.
+  db.exec("CREATE TABLE IF NOT EXISTS files_indexed (file TEXT PRIMARY KEY)")
+  db.exec("CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts)")
+  db.exec("CREATE INDEX IF NOT EXISTS idx_usage_events_type ON usage_events(event_type)")
+
+  try { db.exec("ANALYZE") } catch {}
 }
 
 const MAX_CONTENT = 200
@@ -76,6 +87,7 @@ function truncate(s: string, max = MAX_CONTENT): string {
 
 export function dbInsertChunks(db: Db, chunks: Chunk[]): void {
   const seen = new Set<string>()
+  const seenFiles = new Set<string>()
   db.exec("BEGIN")
   try {
     for (const c of chunks) {
@@ -87,6 +99,11 @@ export function dbInsertChunks(db: Db, chunks: Chunk[]): void {
         "INSERT INTO chunks_fts (name, content, id, file, type, line, lineEnd, body, lang) VALUES (?,?,?,?,?,?,?,?,?)",
         c.name, truncate(c.content), c.id, c.file, c.type, c.line, c.lineEnd, c.body, c.lang,
       )
+      seenFiles.add(c.file)
+    }
+    if (seenFiles.size > 0) {
+      const stmt = db.prepare("INSERT OR IGNORE INTO files_indexed (file) VALUES (?)")
+      for (const f of seenFiles) stmt.run(f)
     }
     db.exec("COMMIT")
   } catch (e) {
@@ -134,7 +151,7 @@ export function dbChunkCount(db: Db): number {
 }
 
 export function dbFileCount(db: Db): number {
-  const row = queryOne(db, "SELECT count(DISTINCT file) as n FROM chunks_fts") as { n: number }
+  const row = queryOne(db, "SELECT count(*) as n FROM files_indexed") as { n: number }
   return row.n
 }
 
@@ -189,6 +206,10 @@ export function dbDeleteChunksForFile(db: Db, file: string): void {
   run(db, "DELETE FROM chunks_fts WHERE file = ?", file)
 }
 
+export function dbRefreshFilesIndexed(db: Db): void {
+  run(db, "DELETE FROM files_indexed WHERE file NOT IN (SELECT DISTINCT file FROM chunks_fts)")
+}
+
 export function dbDeleteFileHash(db: Db, file: string): void {
   run(db, "DELETE FROM file_hashes WHERE file = ?", file)
 }
@@ -198,6 +219,7 @@ export function dbDeleteFile(db: Db, file: string): void {
   try {
     run(db, "DELETE FROM chunks_fts WHERE file = ?", file)
     run(db, "DELETE FROM file_hashes WHERE file = ?", file)
+    run(db, "DELETE FROM files_indexed WHERE file = ?", file)
     db.exec("COMMIT")
   } catch (e) {
     db.exec("ROLLBACK")
