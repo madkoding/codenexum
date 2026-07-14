@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/electron",
-  "version": "0.99.7",
+  "version": "0.99.8",
   "private": true,
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -46,7 +46,8 @@
         }
       ],
       "icon": "build/icon.icns",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -61,6 +62,15 @@
       ],
       "icon": "build/icon.ico"
     },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable.${ext}"
+    },
     "linux": {
       "target": [
         {
@@ -68,51 +78,8 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "icon": "build/icon-linux.png"
-    },
-    "files": [
-      "dist/**/*",
-      "../../apps/plugin/dist/index.js",
-      "../../apps/plugin/dist/index.bundled.js",
-      "../../apps/plugin/dist/index.d.ts",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "../../apps/plugin",
-        "to": "plugin",
-        "filter": ["dist/index.js", "dist/index.bundled.js", "dist/index.d.ts", "package.json"]
-      },
-      {
-        "from": "build/tray",
-        "to": "tray"
-      }
-    ],
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        }
-      ],
-      "category": "public.app-category.developer-tools"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "icon": "build/icon-linux.png",
+      "artifactName": "${productName}-${arch}.${ext}"
     },
     "publish": [
       {

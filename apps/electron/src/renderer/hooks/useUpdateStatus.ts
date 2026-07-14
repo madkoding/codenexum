@@ -17,12 +17,20 @@ export type UpdateInfo = {
   releaseNotes?: string | string[] | null
 }
 
+export type ManualCheck = {
+  result: "up-to-date" | "available" | "error" | "checking"
+  version?: string
+  error?: string
+  ts: number
+}
+
 export type UpdateSnapshot = {
   status: UpdateStatus
   progress: number
   info: UpdateInfo | null
   error: string | null
   currentVersion: string
+  manualCheck: ManualCheck | null
 }
 
 const IDLE: UpdateSnapshot = {
@@ -31,6 +39,7 @@ const IDLE: UpdateSnapshot = {
   info: null,
   error: null,
   currentVersion: "0.0.0",
+  manualCheck: null,
 }
 
 export function useUpdateStatus() {
