@@ -117,21 +117,33 @@ export function getDashboardState() {
     id: p.id, path: p.path, name: p.name, dbPath: p.dbPath, lastSeen: p.lastSeen,
   }))
   db.close()
-  let totalChunks = 0, totalFiles = 0
+  let totalChunks = 0, totalFiles = 0, totalSavedTokens = 0, totalEvents = 0
   for (const p of projects) {
     if (existsSync(p.dbPath)) {
       try {
         const pdb = new DatabaseSync(p.dbPath)
         const tables = pdb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
-        if (tables.some(t => t.name === "chunks")) {
-          totalChunks += (pdb.prepare("SELECT count(*) as c FROM chunks").get() as any).c
-          totalFiles += (pdb.prepare("SELECT count(*) as c FROM files").get() as any).c
+        const tableSet = new Set(tables.map(t => t.name))
+        if (tableSet.has("chunks_fts")) {
+          totalChunks += (pdb.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
+        }
+        if (tableSet.has("file_hashes")) {
+          totalFiles += (pdb.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
+        }
+        if (tableSet.has("usage_events")) {
+          const r = pdb.prepare("SELECT COALESCE(SUM(tokens_saved), 0) as s, COUNT(*) as c FROM usage_events").get() as any
+          totalSavedTokens += r.s || 0
+          totalEvents += r.c || 0
         }
         pdb.close()
       } catch {}
     }
   }
-  return { projects, global: { totalChunks, totalFiles }, compression: getCompressionStatus() }
+  return {
+    projects,
+    global: { totalChunks, totalFiles, totalSavedTokens, totalEvents },
+    compression: getCompressionStatus(),
+  }
 }
 
 interface ActivityBucket { hour: string; count: number; saved: number }
@@ -283,5 +295,25 @@ export function getGlobalAnalytics() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10)
 
-  return { activityTimeline, cumulativeSavings, topQueries, recentActivity, indexHealth, hotFiles }
+  const eventsByType = new Map<string, { count: number; saved: number }>()
+  for (const e of allEvents) {
+    const cur = eventsByType.get(e.type) || { count: 0, saved: 0 }
+    cur.count += 1
+    cur.saved += e.tokensSaved || 0
+    eventsByType.set(e.type, cur)
+  }
+  const globalTotals = {
+    totalEvents: allEvents.length,
+    totalSavedTokens: allEvents.reduce((s, e) => s + (e.tokensSaved || 0), 0),
+    indexSubstitutions: eventsByType.get("index_substitute")?.count || 0,
+    indexSubstitutionSaved: eventsByType.get("index_substitute")?.saved || 0,
+    searchSubstitutions: (eventsByType.get("search")?.count || 0) + (eventsByType.get("search_savings")?.count || 0),
+    compressedOutputs: eventsByType.get("compression")?.count || 0,
+    compressionSaved: eventsByType.get("compression")?.saved || 0,
+    fileReads: eventsByType.get("file_read")?.count || 0,
+    turnSavings: eventsByType.get("turn_savings")?.saved || 0,
+    indexHealthCount: indexHealth.length,
+  }
+
+  return { activityTimeline, cumulativeSavings, topQueries, recentActivity, indexHealth, hotFiles, globalTotals }
 }
