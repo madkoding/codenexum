@@ -2,7 +2,7 @@
 
 > Code index + context compression engine for [opencode](https://opencode.ai).
 > Indexes projects, answers semantic code queries, compresses tool outputs to stay under token limits.
-> v0.99.3 — Electron + MCP rewrite on `develop`.
+> v0.99.8 — Electron + MCP rewrite on `develop`.
 
 ---
 

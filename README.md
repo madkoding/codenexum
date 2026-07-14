@@ -130,9 +130,11 @@ bun run --filter @codenexum/electron package
 
 | Platform | Artifact |
 |---|---|
-| macOS (Apple Silicon) | `CodeNexum-0.99.0-arm64.dmg` |
-| Windows | `CodeNexum 0.99.0.exe` (portable) |
-| Linux | `CodeNexum-0.99.0.AppImage` |
+| macOS (Apple Silicon) | `CodeNexum-arm64.dmg` |
+| macOS (Intel) | `CodeNexum-x64.dmg` |
+| Windows | `CodeNexum-Setup.exe` (NSIS installer) or `CodeNexum-Portable.exe` |
+| Linux x86_64 | `CodeNexum-x86_64.AppImage` |
+| Linux arm64 | `CodeNexum-arm64.AppImage` |
 
 Open the app — it runs in the background with a tray icon.
 
