@@ -63,10 +63,13 @@ apps/
     src/
       main/
         index.ts          # App entry: single-instance lock, installOpencodePlugin, cleanOldDatabases,
-                          # startContextManagerMcp, BrowserWindow (1200x800), tray icon, close-to-tray
+                          # startContextManagerMcp, BrowserWindow (1200x800), tray icon, close-to-tray,
+                          # UpdateManager init, IPC handlers (update:*), before-quit → quitAndInstall
         icon.ts           # getAppIcon: nativeImage from build/icon.png with fallbacks
+        updater.ts        # UpdateManager class wrapping electron-updater: check/download/install,
+                          # status broadcast via webContents.send("update:status-changed")
       preload/
-        index.ts          # contextBridge → window.electronAPI.{invoke, getMcpUrl}
+        index.ts          # contextBridge → window.electronAPI.{invoke, getMcpUrl, update.{check,download,install,getStatus,onStatusChange}}
       mcp/
         index.ts          # Re-exports startContextManagerMcp
         server.ts         # HTTP server on CODENEXUM_MCP_PORT (7770, +1 on EADDRINUSE). Endpoints:
@@ -98,16 +101,18 @@ apps/
         index.html         # SPA entry
         index.css          # Tailwind + dark theme + scrollbar utilities
         main.tsx           # HashRouter: /, /project/:id, /settings
-        App.tsx            # Sidebar + Outlet + ProjectSettingsModal + mobile drawer
+        App.tsx            # Sidebar + Outlet + ProjectSettingsModal + UpdateModal + mobile drawer
         types.ts           # Project, ProjectSummary, ProjectStats, AggregateData
         lib/
           format.ts        # fmt, fmtK, pct, relTime helpers
         hooks/
           useWebSocket.tsx # EventSource on /api/events → dispatches 'cm-data' CustomEvent
+          useUpdateStatus.ts # Subscribes to update:status-changed IPC, exposes check/download/install
         components/
           Sidebar.tsx      # Project list with delete buttons, MCP-connected indicator
           Topbar.tsx       # Sticky header with menu/settings buttons
           ProjectSettingsModal.tsx  # Rename project modal
+          UpdateModal.tsx  # Global modal: available/downloading/downloaded/error/unsupported states
           ui.tsx           # Card, EmptyState, Spinner, LoadingScreen
         pages/
           ProjectsPage.tsx     # Global dashboard: HeroMetric, MiniRing, SavingsMechanismChart,
@@ -135,6 +140,7 @@ scripts/
 docs/
   index.html              # GitHub Pages landing page
   assets/icon.png
+  updates.md              # Release & auto-update procedure (GitHub Releases, manual `gh` upload)
 
 .github/workflows/
   ci.yml                  # bun install → typecheck → test
@@ -221,6 +227,9 @@ Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `contex
 - `CODENEXUM_MAX_FILE_BYTES` (1048576) — 1 MiB max file size
 - `CODENEXUM_SMART_READ` — gates ConversationContext
 - `CODENEXUM_MAX_LINES_{TOOL}` — per-tool max lines for compression
+- `CODENEXUM_UPDATE_FEED_URL` — override update feed URL (testing/staging; `generic` provider)
+- `CODENEXUM_DISABLE_UPDATES=1` — force `disabled` updater state even in packaged builds
+- `CODENEXUM_UPDATE_CHECK_DELAY_MS` (30000) — delay after `app.whenReady` before first update check
 
 ---
 
@@ -248,6 +257,7 @@ Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `contex
 - **`compressToolOutput`** trimming logic has a bug: method detection uses `preSaved > 0` but never checks if preprocessors actually ran. Combined/truncate may mislabel.
 - **`tokenize.py`** exists in root but is not wired to anything.
 - **`v2 DB cleanup`** in main process checks `~/.cache/opencode/` for files matching `context-manager-*.sqlite` or `codenexum-*.sqlite`.
+- **macOS auto-update is unsigned** (no Apple Developer ID). Every updated .dmg prompts Gatekeeper "Open Anyway" once per build. Win portable users do not auto-update — they get an "unsupported" modal with a link to GitHub Releases.
 
 ---
 

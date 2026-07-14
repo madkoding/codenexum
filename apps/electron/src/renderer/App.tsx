@@ -5,6 +5,7 @@ import { useWebSocket } from "./hooks/useWebSocket"
 import Sidebar from "./components/Sidebar"
 import Topbar from "./components/Topbar"
 import ProjectSettingsModal from "./components/ProjectSettingsModal"
+import UpdateModal from "./components/UpdateModal"
 import type { Project } from "./types"
 
 export default function App() {
@@ -116,6 +117,8 @@ export default function App() {
           onSaved={() => window.dispatchEvent(new CustomEvent("cm-data"))}
         />
       ) : null}
+
+      <UpdateModal />
     </div>
   )
 }

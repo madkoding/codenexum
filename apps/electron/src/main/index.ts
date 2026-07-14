@@ -4,6 +4,7 @@ import { fileURLToPath } from "url"
 import { existsSync, writeFileSync, mkdirSync, readFileSync, rmSync, cpSync, readdirSync } from "fs"
 import { startContextManagerMcp } from "../mcp/index.js"
 import { getAppIcon } from "./icon.js"
+import { UpdateManager } from "./updater.js"
 import { APP_NAME, APP_VERSION } from "@codenexum/core"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -16,6 +17,8 @@ app.setName(APP_NAME)
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let installScheduled = false
+let updater: UpdateManager | null = null
 
 const CONFIG_DIR = join(app.getPath("home"), ".config", "codenexum")
 const MCP_CONFIG_PATH = join(CONFIG_DIR, "mcp.json")
@@ -221,6 +224,19 @@ app.whenReady().then(async () => {
   updateMcpConfig(actualPort)
   writeMcpConfig(actualPort)
 
+  updater = new UpdateManager()
+  updater.init()
+  const u = updater
+
+  ipcMain.handle("update:check", () => u.check())
+  ipcMain.handle("update:download", () => u.download())
+  ipcMain.handle("update:install", () => {
+    installScheduled = true
+    isQuitting = true
+    u.installAndRestart()
+  })
+  ipcMain.handle("update:status", () => u.getStatus())
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -248,10 +264,21 @@ app.whenReady().then(async () => {
   tray.setToolTip(APP_NAME)
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Show Dashboard", click: () => mainWindow?.show() },
+    { type: "separator" },
+    { label: "Check for updates…", click: () => u.check() },
+    { type: "separator" },
     { label: "Quit", click: () => { isQuitting = true; app.quit() } },
   ]))
   tray.on("double-click", () => mainWindow?.show())
 })
 
 app.on("window-all-closed", () => {})
-app.on("before-quit", () => { isQuitting = true })
+app.on("before-quit", (e) => {
+  isQuitting = true
+  if (installScheduled) return
+  if (updater && updater.status === "downloaded") {
+    e.preventDefault()
+    installScheduled = true
+    updater.installAndRestart()
+  }
+})

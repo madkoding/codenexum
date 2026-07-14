@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/electron",
-  "version": "0.99.4",
+  "version": "0.99.5",
   "private": true,
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -35,20 +35,45 @@
     ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "category": "public.app-category.developer-tools"
     },
     "win": {
       "target": [
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64", "arm64"] }
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        }
       ]
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "madKoding",
+        "repo": "codenexum"
+      }
+    ]
   },
   "dependencies": {
     "@codenexum/core": "workspace:*",
@@ -68,6 +93,7 @@
     "autoprefixer": "^10.4.0",
     "electron": "43.1.0",
     "electron-builder": "^26.15.6",
+    "electron-updater": "^6.8.9",
     "electron-vite": "^5.0.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
