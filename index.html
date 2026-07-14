@@ -347,49 +347,81 @@
   }
 
   /* Download */
-  .downloads {
+  .dl-groups {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
+    gap: 1.25rem;
     margin-top: 2.5rem;
   }
-  .dl {
+  .dl-group {
     background: var(--bg-2);
     border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 1.5rem;
+    border-radius: 12px;
+    padding: 1.5rem 1.5rem 1.25rem;
+  }
+  .dl-group-head {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.85rem;
+  }
+  .dl-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .dl {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
     text-align: left;
-    transition: all 0.15s;
-    display: block;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--text);
   }
   .dl:hover {
     border-color: var(--accent);
-    transform: translateY(-2px);
+    background: var(--bg);
+    transform: translateY(-1px);
     text-decoration: none;
   }
-  .dl-head {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 1rem;
-  }
-  .dl-os {
-    font-weight: 600;
-    font-size: 1rem;
-  }
-  .dl-icon { color: var(--accent); width: 20px; height: 20px; }
-  .dl-icon svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.5; }
+  .dl:hover .dl-cta { color: var(--accent-bright); }
+  .dl:hover .dl-cta svg { transform: translateX(3px); }
   .dl-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+  .dl-meta-name {
+    font-weight: 500;
+    font-size: 0.95rem;
+  }
+  .dl-meta-sub {
     font-family: ui-monospace, monospace;
-    font-size: 0.78rem;
-    color: var(--muted);
-    margin-bottom: 1rem;
+    font-size: 0.74rem;
+    color: var(--text-dim);
   }
   .dl-cta {
-    color: var(--accent-bright);
+    color: var(--accent);
     font-size: 0.85rem;
     font-weight: 500;
-    display: flex; align-items: center; gap: 0.3rem;
+    display: flex; align-items: center; gap: 0.35rem;
+    transition: color 0.2s ease;
   }
-  .dl-cta svg { width: 14px; height: 14px; }
+  .dl-cta svg {
+    width: 14px; height: 14px;
+    transition: transform 0.2s ease;
+  }
+  @media (max-width: 900px) {
+    .dl-groups { grid-template-columns: 1fr; }
+  }
 
   /* macOS gatekeeper note */
   .mac-note {
@@ -505,7 +537,7 @@
   @media (max-width: 800px) {
     .two-col { grid-template-columns: 1fr; gap: 2rem; }
     .feat-list { grid-template-columns: 1fr; }
-    .downloads { grid-template-columns: 1fr; }
+    .dl-groups { grid-template-columns: 1fr; }
     .worth { grid-template-columns: 1fr; gap: 2rem; }
     .footer-grid { grid-template-columns: 1fr; gap: 2rem; }
     .section-head { flex-direction: column; align-items: flex-start; }
@@ -534,7 +566,7 @@
 <header class="hero">
   <div class="hero-tag">
     <span class="dot"></span>
-    <span>v0.99.3 — out now</span>
+    <span>v0.99.9 — out now</span>
   </div>
   <h1>
     Compress your<br/>
@@ -697,25 +729,84 @@ sequenceDiagram
   <div class="section-head">
     <span class="num">04</span>
     <h2>Download</h2>
-    <span class="sub">Free, MIT, runs locally. Auto-updates via the in-app tray.</span>
+    <span class="sub">Free, MIT, runs locally. Auto-updates with an in-app modal.</span>
   </div>
-  <div class="downloads">
-    <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.3-arm64.dmg">
-      <strong>macOS</strong>
-      <span>Apple Silicon · DMG</span>
-    </a>
-    <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.3.dmg">
-      <strong>macOS</strong>
-      <span>Intel · DMG</span>
-    </a>
-    <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.3.exe">
-      <strong>Windows</strong>
-      <span>x64 · Setup</span>
-    </a>
-    <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-0.99.3.AppImage">
-      <strong>Linux</strong>
-      <span>AppImage</span>
-    </a>
+  <div class="dl-groups">
+    <div class="dl-group">
+      <div class="dl-group-head">macOS</div>
+      <div class="dl-group-list">
+        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-arm64.dmg">
+          <div class="dl-meta">
+            <span class="dl-meta-name">Apple Silicon</span>
+            <span class="dl-meta-sub">arm64 · DMG</span>
+          </div>
+          <span class="dl-cta">
+            Download
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </span>
+        </a>
+        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-x64.dmg">
+          <div class="dl-meta">
+            <span class="dl-meta-name">Intel</span>
+            <span class="dl-meta-sub">x64 · DMG</span>
+          </div>
+          <span class="dl-cta">
+            Download
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </span>
+        </a>
+      </div>
+    </div>
+    <div class="dl-group">
+      <div class="dl-group-head">Windows</div>
+      <div class="dl-group-list">
+        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-Setup.exe">
+          <div class="dl-meta">
+            <span class="dl-meta-name">Installer</span>
+            <span class="dl-meta-sub">x64 · NSIS · auto-update</span>
+          </div>
+          <span class="dl-cta">
+            Download
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </span>
+        </a>
+        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-Portable.exe">
+          <div class="dl-meta">
+            <span class="dl-meta-name">Portable</span>
+            <span class="dl-meta-sub">x64 · no install · manual update</span>
+          </div>
+          <span class="dl-cta">
+            Download
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </span>
+        </a>
+      </div>
+    </div>
+    <div class="dl-group">
+      <div class="dl-group-head">Linux</div>
+      <div class="dl-group-list">
+        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-x86_64.AppImage">
+          <div class="dl-meta">
+            <span class="dl-meta-name">AppImage x86_64</span>
+            <span class="dl-meta-sub">Intel/AMD · auto-update</span>
+          </div>
+          <span class="dl-cta">
+            Download
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </span>
+        </a>
+        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-arm64.AppImage">
+          <div class="dl-meta">
+            <span class="dl-meta-name">AppImage arm64</span>
+            <span class="dl-meta-sub">Apple Silicon / ARM · auto-update</span>
+          </div>
+          <span class="dl-cta">
+            Download
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </span>
+        </a>
+      </div>
+    </div>
   </div>
   <div class="mac-note">
     <div class="mac-note-icon">
@@ -822,7 +913,7 @@ sequenceDiagram
   </div>
   <div class="footer-bottom">
     <span class="mono">MIT &copy; 2026 madkoding</span>
-    <span class="mono">v0.99.3 &middot; <a href="https://github.com/madkoding/codenexum/releases">changelog</a></span>
+    <span class="mono">v0.99.9 &middot; <a href="https://github.com/madkoding/codenexum/releases">changelog</a></span>
   </div>
 </footer>
 
