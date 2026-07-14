@@ -6,7 +6,7 @@ import type { ProjectStats, AggregateData } from "../types"
 import {
   Zap, Target, FileText, Cpu,
   Search, Sparkles, Database, Minimize2, Brain,
-  Activity, PiggyBank,
+  Activity, PiggyBank, BarChart3,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
@@ -243,6 +243,7 @@ export function ProjectDetailPage() {
     }
   })
 
+  const isInactive = (stats.measuredSavings || 0) === 0 && (stats.efficiencyRatio || 0) === 0
   const nativeSearches = stats.nativeSearches || 0
   const searches = stats.searches || 0
   const lastTs = stats.indexedAt ? new Date(stats.indexedAt).getTime() : 0
@@ -252,34 +253,60 @@ export function ProjectDetailPage() {
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 md:space-y-4">
       <div className="grid grid-cols-2 xs:grid-cols-4 lg:grid-cols-4 gap-3">
-        <HeroMetric
-          value={fmtK(stats.measuredSavings || 0)}
-          label="Tokens saved"
-          sub={`${fmt(stats.indexSubstitutions || 0)} substitutions`}
-          accent="from-blue-600/40 to-blue-900/40"
-          Icon={Zap}
-        />
-        <HeroMetric
-          value={pct(stats.efficiencyRatio || 0)}
-          label="Intercept rate"
-          sub={`${fmt(searches)} searches · ${fmt(nativeSearches)} native`}
-          accent="from-violet-600/40 to-violet-900/40"
-          Icon={Target}
-        />
-        <HeroMetric
-          value={fmt(stats.filesRead || 0)}
-          label="Files read"
-          sub={`${fmt(stats.snippetOnly || 0)} snippet substitutions`}
-          accent="from-cyan-600/40 to-cyan-900/40"
-          Icon={FileText}
-        />
-        <HeroMetric
-          value={fmt(stats.chunks || 0)}
-          label="Indexed chunks"
-          sub={`${fmt(stats.files || 0)} files · ${fmt(stats.edges || 0)} edges`}
-          accent="from-amber-600/40 to-amber-900/40"
-          Icon={Cpu}
-        />
+        {isInactive ? (
+          <>
+            <div className="col-span-2 relative overflow-hidden rounded-xl border border-dashed border-gray-700 bg-gradient-to-br from-zinc-800/40 to-zinc-900/40 p-4 flex flex-col items-center justify-center">
+              <BarChart3 size={28} className="text-muted/40 mb-1.5" />
+              <p className="text-sm font-medium text-zinc-400">Awaiting usage data</p>
+              <p className="text-xs text-muted/60 mt-1 text-center">Savings and intercept metrics will appear once this project is used with opencode</p>
+            </div>
+            <HeroMetric
+              value={fmt(stats.filesRead || 0)}
+              label="Files read"
+              sub={`${fmt(stats.snippetOnly || 0)} snippet substitutions`}
+              accent="from-cyan-600/40 to-cyan-900/40"
+              Icon={FileText}
+            />
+            <HeroMetric
+              value={fmt(stats.chunks || 0)}
+              label="Indexed chunks"
+              sub={`${fmt(stats.files || 0)} files · ${fmt(stats.edges || 0)} edges`}
+              accent="from-amber-600/40 to-amber-900/40"
+              Icon={Cpu}
+            />
+          </>
+        ) : (
+          <>
+            <HeroMetric
+              value={fmtK(stats.measuredSavings || 0)}
+              label="Tokens saved"
+              sub={`${fmt(stats.indexSubstitutions || 0)} substitutions`}
+              accent="from-blue-600/40 to-blue-900/40"
+              Icon={Zap}
+            />
+            <HeroMetric
+              value={pct(stats.efficiencyRatio || 0)}
+              label="Intercept rate"
+              sub={`${fmt(searches)} searches · ${fmt(nativeSearches)} native`}
+              accent="from-violet-600/40 to-violet-900/40"
+              Icon={Target}
+            />
+            <HeroMetric
+              value={fmt(stats.filesRead || 0)}
+              label="Files read"
+              sub={`${fmt(stats.snippetOnly || 0)} snippet substitutions`}
+              accent="from-cyan-600/40 to-cyan-900/40"
+              Icon={FileText}
+            />
+            <HeroMetric
+              value={fmt(stats.chunks || 0)}
+              label="Indexed chunks"
+              sub={`${fmt(stats.files || 0)} files · ${fmt(stats.edges || 0)} edges`}
+              accent="from-amber-600/40 to-amber-900/40"
+              Icon={Cpu}
+            />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

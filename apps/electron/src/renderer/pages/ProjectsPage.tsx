@@ -267,11 +267,13 @@ export function ProjectsPage() {
     )
   }
 
+  const activeProjects = projects.filter(p => (p.measuredSavings || 0) > 0 || (p.efficiencyRatio || 0) > 0)
   const totalChunks = projects.reduce((s, p) => s + (p.chunks || 0), 0)
-  const totalSavings = projects.reduce((s, p) => s + (p.measuredSavings || 0), 0)
-  const avgEfficiency = projects.length > 0
-    ? projects.reduce((s, p) => s + (p.efficiencyRatio || 0), 0) / projects.length
+  const totalSavings = activeProjects.reduce((s, p) => s + (p.measuredSavings || 0), 0)
+  const avgEfficiency = activeProjects.length > 0
+    ? activeProjects.reduce((s, p) => s + (p.efficiencyRatio || 0), 0) / activeProjects.length
     : 0
+  const hasUsageData = totalSavings > 0 || avgEfficiency > 0
 
   const activity24h = analytics?.activityTimeline.reduce((s, b) => s + b.count, 0) || 0
 
@@ -332,30 +334,54 @@ export function ProjectsPage() {
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-4">
       <div className="grid grid-cols-2 xs:grid-cols-4 lg:grid-cols-4 gap-3">
-        <HeroMetric
-          value={fmtK(totalSavings)}
-          label="Tokens saved"
-          accent="from-blue-600/40 to-blue-900/40"
-          Icon={Zap}
-        />
-        <HeroMetric
-          value={fmt(activity24h)}
-          label="Events (24h)"
-          accent="from-green-600/40 to-green-900/40"
-          Icon={BarChart3}
-        />
-        <HeroMetric
-          value={pct(avgEfficiency)}
-          label="Intercept rate"
-          accent="from-violet-600/40 to-violet-900/40"
-          Icon={Target}
-        />
-        <HeroMetric
-          value={fmt(projects.length)}
-          label="Active projects"
-          accent="from-amber-600/40 to-amber-900/40"
-          Icon={FolderGit2}
-        />
+        {hasUsageData ? (
+          <>
+            <HeroMetric
+              value={fmtK(totalSavings)}
+              label="Tokens saved"
+              accent="from-blue-600/40 to-blue-900/40"
+              Icon={Zap}
+            />
+            <HeroMetric
+              value={fmt(activity24h)}
+              label="Events (24h)"
+              accent="from-green-600/40 to-green-900/40"
+              Icon={BarChart3}
+            />
+            <HeroMetric
+              value={pct(avgEfficiency)}
+              label="Intercept rate"
+              accent="from-violet-600/40 to-violet-900/40"
+              Icon={Target}
+            />
+            <HeroMetric
+              value={fmt(projects.length)}
+              label="Active projects"
+              accent="from-amber-600/40 to-amber-900/40"
+              Icon={FolderGit2}
+            />
+          </>
+        ) : (
+          <>
+            <HeroMetric
+              value={fmt(activity24h)}
+              label="Events (24h)"
+              accent="from-green-600/40 to-green-900/40"
+              Icon={BarChart3}
+            />
+            <HeroMetric
+              value={fmt(projects.length)}
+              label="Active projects"
+              accent="from-amber-600/40 to-amber-900/40"
+              Icon={FolderGit2}
+            />
+            <div className="col-span-2 relative overflow-hidden rounded-xl border border-dashed border-gray-700 bg-gradient-to-br from-zinc-800/40 to-zinc-900/40 p-4 flex flex-col items-center justify-center">
+              <BarChart3 size={28} className="text-muted/40 mb-1.5" />
+              <p className="text-sm font-medium text-zinc-400">Awaiting usage data</p>
+              <p className="text-xs text-muted/60 mt-1 text-center">Savings and intercept metrics will appear once projects are used with opencode</p>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

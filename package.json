@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/electron",
-  "version": "0.99.3",
+  "version": "0.99.4",
   "private": true,
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -17,6 +17,7 @@
     "package": "bun run --filter @codenexum/electron package"
   },
   "devDependencies": {
+    "electron": "43.1.0",
     "typescript": "^5.7.0"
   },
   "dependencies": {

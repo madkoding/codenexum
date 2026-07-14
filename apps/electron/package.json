@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/electron",
-  "version": "0.99.3",
+  "version": "0.99.4",
   "private": true,
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -40,10 +40,14 @@
       "category": "public.app-category.developer-tools"
     },
     "win": {
-      "target": "portable"
+      "target": [
+        { "target": "portable", "arch": ["x64"] }
+      ]
     },
     "linux": {
-      "target": "AppImage"
+      "target": [
+        { "target": "AppImage", "arch": ["x64", "arm64"] }
+      ]
     }
   },
   "dependencies": {
