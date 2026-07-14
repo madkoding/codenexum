@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/core",
-  "version": "0.99.2",
+  "version": "0.99.3",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
