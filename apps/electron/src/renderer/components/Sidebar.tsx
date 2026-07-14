@@ -4,6 +4,7 @@ import { LayoutDashboard, FolderGit2, Activity, Trash2, Settings as SettingsIcon
 import { useWebSocket } from "../hooks/useWebSocket"
 import type { ProjectSummary } from "../types"
 import { fmt } from "../lib/format"
+import { APP_NAME, APP_VERSION } from "@codenexum/core"
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { connected } = useWebSocket()
@@ -37,7 +38,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     <nav className="h-full flex flex-col">
       <div className="px-4 py-5 flex items-center gap-2 border-b border-gray-800">
         <Activity size={20} className="text-accent shrink-0" />
-        <span className="font-bold text-sm">CodeNexum v0.99.1</span>
+        <span className="font-bold text-sm">{APP_NAME} {APP_VERSION}</span>
       </div>
 
       <div className="px-2 py-3 space-y-1">

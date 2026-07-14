@@ -4,13 +4,13 @@ import { fileURLToPath } from "url"
 import { existsSync, writeFileSync, mkdirSync, readFileSync, rmSync, cpSync, readdirSync } from "fs"
 import { startContextManagerMcp } from "../mcp/index.js"
 import { getAppIcon } from "./icon.js"
+import { APP_NAME, APP_VERSION } from "@codenexum/core"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged
 const ROOT = isDev ? resolve(__dirname, "../..") : dirname(__dirname)
 
-const APP_NAME = "CodeNexum"
 app.setName(APP_NAME)
 
 let mainWindow: BrowserWindow | null = null
@@ -134,7 +134,7 @@ function installOpencodePlugin() {
   } else {
     writeFileSync(
       join(OPENCODE_PLUGINS_DIR, "package.json"),
-      JSON.stringify({ name: "@codenexum/plugin", version: "0.99.0", type: "module", main: "./index.js" }, null, 2) + "\n"
+      JSON.stringify({ name: "@codenexum/plugin", version: APP_VERSION, type: "module", main: "./index.js" }, null, 2) + "\n"
     )
   }
 

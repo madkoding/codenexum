@@ -8,7 +8,7 @@ import { getDb, dropDb } from "./db-pool.js"
 import { indexProject, startWatching, stopWatching } from "./indexer.js"
 import { autoDiscoverAndIndex } from "./auto-discover.js"
 import { initSchema, dbSetSchemaVersion, SCHEMA_VERSION, dbInsertChunks, dbInsertEdges, dbSetFileHash, dbSetMeta, dbSearch, dbFindRelated, dbFindImpacted, dbGetMeta, dbGetChunksForFile } from "@codenexum/sql"
-import { parseSymbolRef, charsToTokens, formatSearchResults } from "@codenexum/core"
+import { parseSymbolRef, charsToTokens, formatSearchResults, APP_VERSION } from "@codenexum/core"
 import { logEvent } from "./usage.js"
 import { rawCacheGet, rawCacheSet } from "./cache.js"
 import { compressToolOutput, compressToolOutputSemantic, isCompressible } from "./compress.js"
@@ -16,7 +16,7 @@ import { getSettings, updateSettings } from "./settings.js"
 
 const PORT = parseInt(process.env.CODENEXUM_MCP_PORT || "7770", 10)
 const MCP_PROTOCOL_VERSION = "2024-11-05"
-const SERVER_INFO = { name: "codenexum", version: "0.99.0" }
+const SERVER_INFO = { name: "codenexum", version: APP_VERSION }
 
 const TOOLS = [
   { name: "cm_projects_list", description: "List all registered projects", inputSchema: { type: "object", properties: {} } },

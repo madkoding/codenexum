@@ -1,3 +1,4 @@
+export * from "./version"
 export * from "./types"
 export * from "./tokens"
 export * from "./format"

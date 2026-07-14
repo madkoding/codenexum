@@ -12,6 +12,7 @@
     "typecheck": "tsc -b",
     "test": "bun test packages/*/test apps/*/test",
     "lint": "tsc -b",
+    "version": "bun run scripts/sync-version.ts",
     "dev": "bun run --filter @codenexum/electron dev",
     "package": "bun run --filter @codenexum/electron package"
   },
