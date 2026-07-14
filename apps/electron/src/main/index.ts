@@ -219,13 +219,31 @@ app.on("second-instance", () => {
 
 function buildTrayMenu(): Menu {
   const u = updater
+  const visible = mainWindow?.isVisible() && mainWindow?.isFocused()
   return Menu.buildFromTemplate([
-    { label: "Show Dashboard", click: () => { mainWindow?.show(); mainWindow?.focus() } },
+    {
+      label: visible ? "Hide Dashboard" : "Show Dashboard",
+      click: () => {
+        if (!mainWindow) return
+        if (mainWindow.isVisible() && mainWindow.isFocused()) {
+          mainWindow.hide()
+        } else {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+        refreshTrayMenu()
+      },
+    },
     { type: "separator" },
     { label: "Check for updates…", click: () => u?.check() },
     { type: "separator" },
     { label: "Quit " + APP_NAME, click: () => { isAppQuitting = true; installScheduled = false; app.quit() } },
   ])
+}
+
+function refreshTrayMenu() {
+  if (!tray) return
+  tray.setContextMenu(buildTrayMenu())
 }
 
 function createTray() {
@@ -239,12 +257,15 @@ function createTray() {
   tray = new Tray(icon)
   tray.setToolTip(APP_NAME)
   tray.setContextMenu(buildTrayMenu())
-  tray.on("click", () => {
-    if (!mainWindow) return
-    if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide()
-    else { mainWindow.show(); mainWindow.focus() }
-  })
-  tray.on("double-click", () => { mainWindow?.show(); mainWindow?.focus() })
+  if (process.platform !== "darwin") {
+    tray.on("click", () => {
+      if (!mainWindow) return
+      if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide()
+      else { mainWindow.show(); mainWindow.focus() }
+      refreshTrayMenu()
+    })
+    tray.on("double-click", () => { mainWindow?.show(); mainWindow?.focus(); refreshTrayMenu() })
+  }
 }
 
 function destroyTray() {
@@ -264,7 +285,12 @@ function applyCloseBehavior() {
       if (isAppQuitting) return
       e.preventDefault()
       mainWindow.hide()
+      refreshTrayMenu()
     })
+    mainWindow.on("show", () => refreshTrayMenu())
+    mainWindow.on("hide", () => refreshTrayMenu())
+    mainWindow.on("focus", () => refreshTrayMenu())
+    mainWindow.on("blur", () => refreshTrayMenu())
   } else {
     destroyTray()
     mainWindow.removeAllListeners("close")

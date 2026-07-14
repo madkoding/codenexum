@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/sql",
-  "version": "0.99.8",
+  "version": "0.99.9",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
