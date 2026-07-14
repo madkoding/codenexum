@@ -114,14 +114,6 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
     },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": ["x64", "arm64"]
-        }
-      ]
-    },
     "publish": [
       {
         "provider": "github",
