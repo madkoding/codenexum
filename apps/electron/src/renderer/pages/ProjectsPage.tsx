@@ -64,18 +64,26 @@ function HeroMetric({ value, label, sub, accent, Icon }: { value: string; label:
 }
 
 function MiniRing({ value, max, label, color = "#3b82f6", size = 56 }: { value: number; max: number; label: string; color?: string; size?: number }) {
-  const pct = max > 0 ? Math.min(1, value / max) : 0
+  const ratio = max > 0 ? Math.min(1, value / max) : 0
   const r = (size - 8) / 2
   const c = 2 * Math.PI * r
-  const off = c * (1 - pct)
+  const off = c * (1 - ratio)
+  const labelOffset = Math.round(size * 0.16)
   return (
-    <div className="flex flex-col items-center">
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1f2937" strokeWidth={4} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={4} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />
-      </svg>
-      <div className="-mt-9 text-xs font-semibold text-text tabular-nums" style={{ color }}>{pct > 0 ? `${(pct * 100).toFixed(0)}%` : "—"}</div>
-      <div className="text-[10px] text-muted mt-1 text-center leading-tight">{label}</div>
+    <div className="flex flex-col items-center min-w-0 w-full">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90 block">
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1f2937" strokeWidth={4} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={4} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />
+        </svg>
+        <div
+          className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold tabular-nums"
+          style={{ color }}
+        >
+          {ratio > 0 ? `${(ratio * 100).toFixed(0)}%` : "—"}
+        </div>
+      </div>
+      <div className="text-[10px] text-muted mt-1.5 text-center leading-tight truncate w-full" style={{ paddingTop: labelOffset > 0 ? 0 : undefined }}>{label}</div>
     </div>
   )
 }
@@ -130,35 +138,36 @@ function SavingsMechanismChart({ data }: { data: { key: string; label: string; v
 }
 
 function ProjectHealthCard({ name, files, chunks, zeroChunkFiles, lastIndexed, href, accent }: { name: string; files: number; chunks: number; zeroChunkFiles: number; lastIndexed: string | null; href: string; accent: string }) {
-  const indexedRatio = files > 0 ? 1 - (zeroChunkFiles / files) : 0
   const lastTs = lastIndexed ? new Date(lastIndexed).getTime() : 0
   const ageHours = lastTs ? (Date.now() - lastTs) / (1000 * 60 * 60) : Infinity
   const freshness = ageHours < 1 ? 1 : ageHours < 24 ? 0.8 : ageHours < 168 ? 0.5 : 0.2
+  const indexedFiles = Math.max(0, files - zeroChunkFiles)
   return (
-    <Link to={href} className="block bg-panel border border-gray-800 rounded-xl p-4 hover:border-accent/50 transition-colors">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: accent }} />
-            <div className="font-semibold truncate text-sm">{name}</div>
+    <Link
+      to={href}
+      className="group flex flex-col bg-panel border border-gray-800 rounded-xl p-3.5 hover:border-accent/50 transition-colors min-w-0 overflow-hidden h-full"
+    >
+      <div className="flex items-start gap-2 mb-3 min-w-0">
+        <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ background: accent }} />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold truncate text-sm" title={name}>{name}</div>
+          <div className="text-[11px] text-muted mt-0.5 truncate">
+            {lastIndexed ? `Updated ${relTime(lastIndexed)}` : "Never indexed"}
           </div>
-          <div className="text-xs text-muted mt-0.5">{lastIndexed ? `Updated ${relTime(lastIndexed)}` : "Never indexed"}</div>
         </div>
       </div>
-      <div className="flex items-end justify-around gap-2">
-        <div className="flex flex-col items-center">
-          <MiniRing value={files - zeroChunkFiles} max={files || 1} label="Indexed" color={accent} />
+      <div className="grid grid-cols-2 gap-1 mb-3 min-w-0">
+        <MiniRing value={indexedFiles} max={files || 1} label="Indexed" color={accent} />
+        <MiniRing value={freshness} max={1} label="Fresh" color="#22c55e" />
+      </div>
+      <div className="mt-auto pt-2 border-t border-gray-800/60 grid grid-cols-2 gap-2 min-w-0">
+        <div className="text-center min-w-0">
+          <div className="text-sm font-bold tabular-nums truncate" title={fmtK(chunks)}>{fmtK(chunks)}</div>
+          <div className="text-[10px] text-muted truncate">chunks</div>
         </div>
-        <div className="flex flex-col items-center">
-          <MiniRing value={freshness} max={1} label="Fresh" color="#22c55e" />
-        </div>
-        <div className="text-center">
-          <div className="text-lg font-bold tabular-nums">{fmtK(chunks)}</div>
-          <div className="text-[10px] text-muted">chunks</div>
-        </div>
-        <div className="text-center">
-          <div className="text-lg font-bold tabular-nums">{fmt(files)}</div>
-          <div className="text-[10px] text-muted">files</div>
+        <div className="text-center min-w-0">
+          <div className="text-sm font-bold tabular-nums truncate" title={fmt(files)}>{fmt(files)}</div>
+          <div className="text-[10px] text-muted truncate">files</div>
         </div>
       </div>
     </Link>
@@ -472,7 +481,7 @@ export function ProjectsPage() {
 
       <Card title="Index health">
         {indexHealthRows.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
             {indexHealthRows.map((h, i) => (
               <ProjectHealthCard
                 key={h.id}

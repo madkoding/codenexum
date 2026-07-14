@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react"
 import { LoadingScreen } from "../components/ui"
 import {
   Settings, RotateCcw, Zap, Search, FileText, Database,
-  Brain, Palette, AlignLeft, FileCode2, Save, Sparkles, AlertTriangle,
+  Brain, Palette, AlignLeft, FileCode2, Save, Sparkles, AlertTriangle, Layout,
 } from "lucide-react"
 
 interface AppSettings {
@@ -17,6 +17,7 @@ interface AppSettings {
   stackTrim: boolean
   capBodyLines: boolean
   persistentCache: boolean
+  closeToTray: boolean
   compressThreshold: number
   cacheTtlMs: number
   cacheMaxEntries: number
@@ -34,6 +35,7 @@ const DEFAULTS: AppSettings = {
   stackTrim: true,
   capBodyLines: true,
   persistentCache: true,
+  closeToTray: false,
   compressThreshold: 8000,
   cacheTtlMs: 5 * 60 * 1000,
   cacheMaxEntries: 200,
@@ -44,7 +46,7 @@ interface ToggleDef {
   label: string
   description: string
   Icon: React.ComponentType<{ size?: number; className?: string }>
-  category: "intercept" | "compress" | "cache" | "telemetry"
+  category: "intercept" | "compress" | "cache" | "telemetry" | "window"
 }
 
 const TOGGLES: ToggleDef[] = [
@@ -125,6 +127,13 @@ const TOGGLES: ToggleDef[] = [
     Icon: Zap,
     category: "telemetry",
   },
+  {
+    key: "closeToTray",
+    label: "Close to tray",
+    description: "When enabled, closing the window hides the app to the system tray instead of quitting. The MCP server keeps running in the background. Right-click the tray icon to quit.",
+    Icon: Layout,
+    category: "window",
+  },
 ]
 
 const CATEGORIES: { id: ToggleDef["category"]; label: string; description: string }[] = [
@@ -132,6 +141,7 @@ const CATEGORIES: { id: ToggleDef["category"]; label: string; description: strin
   { id: "compress", label: "Compression", description: "Reduce the size of any tool output before it reaches the LLM." },
   { id: "cache", label: "Cache", description: "Avoid re-fetching the same snippet multiple times." },
   { id: "telemetry", label: "Telemetry", description: "What gets logged and shown in the dashboard." },
+  { id: "window", label: "Window", description: "How the app window behaves on close and minimize." },
 ]
 
 function Toggle({ def, value, onChange, saving }: { def: ToggleDef; value: boolean; onChange: (v: boolean) => void; saving: boolean }) {
@@ -227,6 +237,9 @@ export function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: "cm_settings_set", args: { settings: patch } }),
       })
+      if ("closeToTray" in patch) {
+        await window.electronAPI.reloadCloseBehavior()
+      }
     } catch {} finally {
       setSaving(false)
     }

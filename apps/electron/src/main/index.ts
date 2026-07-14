@@ -3,9 +3,10 @@ import { join, dirname, resolve } from "path"
 import { fileURLToPath } from "url"
 import { existsSync, writeFileSync, mkdirSync, readFileSync, rmSync, cpSync, readdirSync } from "fs"
 import { startContextManagerMcp } from "../mcp/index.js"
-import { getAppIcon } from "./icon.js"
+import { getAppIcon, getTrayIcon } from "./icon.js"
 import { UpdateManager } from "./updater.js"
 import { APP_NAME, APP_VERSION } from "@codenexum/core"
+import { getSettings } from "../mcp/settings.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -16,8 +17,8 @@ app.setName(APP_NAME)
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let isQuitting = false
 let installScheduled = false
+let isAppQuitting = false
 let updater: UpdateManager | null = null
 
 const CONFIG_DIR = join(app.getPath("home"), ".config", "codenexum")
@@ -211,9 +212,64 @@ if (!gotLock) app.quit()
 app.on("second-instance", () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore()
+    if (!mainWindow.isVisible()) mainWindow.show()
     mainWindow.focus()
   }
 })
+
+function buildTrayMenu(): Menu {
+  const u = updater
+  return Menu.buildFromTemplate([
+    { label: "Show Dashboard", click: () => { mainWindow?.show(); mainWindow?.focus() } },
+    { type: "separator" },
+    { label: "Check for updates…", click: () => u?.check() },
+    { type: "separator" },
+    { label: "Quit " + APP_NAME, click: () => { isAppQuitting = true; installScheduled = false; app.quit() } },
+  ])
+}
+
+function createTray() {
+  if (tray) return
+  const size: 16 | 32 | 64 = process.platform === "darwin" ? 16 : process.platform === "linux" ? 32 : 32
+  const icon = getTrayIcon(size)
+  if (icon.isEmpty()) {
+    console.warn(`[codenexum] Tray icon not found — tray disabled`)
+    return
+  }
+  tray = new Tray(icon)
+  tray.setToolTip(APP_NAME)
+  tray.setContextMenu(buildTrayMenu())
+  tray.on("click", () => {
+    if (!mainWindow) return
+    if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide()
+    else { mainWindow.show(); mainWindow.focus() }
+  })
+  tray.on("double-click", () => { mainWindow?.show(); mainWindow?.focus() })
+}
+
+function destroyTray() {
+  if (!tray) return
+  tray.destroy()
+  tray = null
+}
+
+function applyCloseBehavior() {
+  if (!mainWindow) return
+  const closeToTray = getSettings().closeToTray === true
+  if (closeToTray) {
+    createTray()
+    mainWindow.removeAllListeners("close")
+    mainWindow.on("close", (e) => {
+      if (!mainWindow) return
+      if (isAppQuitting) return
+      e.preventDefault()
+      mainWindow.hide()
+    })
+  } else {
+    destroyTray()
+    mainWindow.removeAllListeners("close")
+  }
+}
 
 app.whenReady().then(async () => {
   installOpencodePlugin()
@@ -232,10 +288,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("update:download", () => u.download())
   ipcMain.handle("update:install", () => {
     installScheduled = true
-    isQuitting = true
     u.installAndRestart()
   })
   ipcMain.handle("update:status", () => u.getStatus())
+
+  ipcMain.handle("settings:get", () => getSettings())
+  ipcMain.handle("settings:reload-close-behavior", () => { applyCloseBehavior() })
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -252,29 +310,19 @@ app.whenReady().then(async () => {
 
   mainWindow.loadFile(join(__dirname, "..", "renderer", "index.html"))
 
-  mainWindow.once("ready-to-show", () => mainWindow?.show())
-  mainWindow.on("close", (e) => {
-    if (!isQuitting) {
-      e.preventDefault()
-      mainWindow?.hide()
-    }
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show()
+    applyCloseBehavior()
   })
-
-  tray = new Tray(getAppIcon())
-  tray.setToolTip(APP_NAME)
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Show Dashboard", click: () => mainWindow?.show() },
-    { type: "separator" },
-    { label: "Check for updates…", click: () => u.check() },
-    { type: "separator" },
-    { label: "Quit", click: () => { isQuitting = true; app.quit() } },
-  ]))
-  tray.on("double-click", () => mainWindow?.show())
 })
 
-app.on("window-all-closed", () => {})
+app.on("window-all-closed", () => {
+  if (getSettings().closeToTray === true) return
+  app.quit()
+})
+
 app.on("before-quit", (e) => {
-  isQuitting = true
+  isAppQuitting = true
   if (installScheduled) return
   if (updater && updater.status === "downloaded") {
     e.preventDefault()

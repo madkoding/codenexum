@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/electron",
-  "version": "0.99.5",
+  "version": "0.99.7",
   "private": true,
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -21,6 +21,7 @@
     },
     "files": [
       "dist/**/*",
+      "build/tray/**/*",
       "../../apps/plugin/dist/index.js",
       "../../apps/plugin/dist/index.bundled.js",
       "../../apps/plugin/dist/index.d.ts",
@@ -31,6 +32,60 @@
         "from": "../../apps/plugin",
         "to": "plugin",
         "filter": ["dist/index.js", "dist/index.bundled.js", "dist/index.d.ts", "package.json"]
+      },
+      {
+        "from": "build/tray",
+        "to": "tray"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "build/icon-linux.png"
+    },
+    "files": [
+      "dist/**/*",
+      "../../apps/plugin/dist/index.js",
+      "../../apps/plugin/dist/index.bundled.js",
+      "../../apps/plugin/dist/index.d.ts",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../apps/plugin",
+        "to": "plugin",
+        "filter": ["dist/index.js", "dist/index.bundled.js", "dist/index.d.ts", "package.json"]
+      },
+      {
+        "from": "build/tray",
+        "to": "tray"
       }
     ],
     "mac": {

@@ -5,6 +5,8 @@ declare global {
     electronAPI: {
       invoke: (channel: string, ...args: any[]) => Promise<any>
       getMcpUrl: () => Promise<string>
+      getSettings: () => Promise<any>
+      reloadCloseBehavior: () => Promise<void>
       update: {
         check: () => Promise<void>
         download: () => Promise<void>

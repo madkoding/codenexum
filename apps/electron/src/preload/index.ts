@@ -6,6 +6,8 @@ const ALLOWED_CHANNELS = new Set([
   "update:download",
   "update:install",
   "update:status",
+  "settings:get",
+  "settings:reload-close-behavior",
 ])
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -14,6 +16,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return ipcRenderer.invoke(channel, ...args)
   },
   getMcpUrl: () => ipcRenderer.invoke("get-mcp-url"),
+  getSettings: () => ipcRenderer.invoke("settings:get"),
+  reloadCloseBehavior: () => ipcRenderer.invoke("settings:reload-close-behavior"),
   update: {
     check: () => ipcRenderer.invoke("update:check"),
     download: () => ipcRenderer.invoke("update:download"),

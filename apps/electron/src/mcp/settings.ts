@@ -14,6 +14,7 @@ export interface Settings {
   stackTrim: boolean
   capBodyLines: boolean
   persistentCache: boolean
+  closeToTray: boolean
   compressThreshold: number
   cacheTtlMs: number
   cacheMaxEntries: number
@@ -31,6 +32,7 @@ const DEFAULTS: Settings = {
   stackTrim: true,
   capBodyLines: true,
   persistentCache: true,
+  closeToTray: false,
   compressThreshold: 8000,
   cacheTtlMs: 5 * 60 * 1000,
   cacheMaxEntries: 200,
