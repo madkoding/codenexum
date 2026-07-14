@@ -25,6 +25,9 @@ const OLD_PLUGIN_DIR = join(OPENCODE_DIR, "plugins", "node_modules", "@madtech",
 const PLUGIN_SRC = isDev
   ? resolve(ROOT, "..", "..", "apps", "plugin", "dist")
   : join(process.resourcesPath, "plugin", "dist")
+const PLUGIN_BUNDLED = isDev
+  ? resolve(ROOT, "..", "..", "apps", "plugin", "dist", "index.bundled.js")
+  : join(process.resourcesPath, "plugin", "dist", "index.bundled.js")
 const PLUGIN_PKG = isDev
   ? resolve(ROOT, "..", "..", "apps", "plugin", "package.json")
   : join(process.resourcesPath, "plugin", "package.json")
@@ -37,6 +40,58 @@ function writeMcpConfig(port: number) {
   writeFileSync(MCP_CONFIG_PATH, JSON.stringify({ port, url: `http://127.0.0.1:${port}` }, null, 2))
 }
 
+function readOpencodeConfig(cp: string): any | null {
+  if (!existsSync(cp)) return null
+  try {
+    const raw = readFileSync(cp, "utf-8")
+    const json = raw
+      .replace(/^(\s*)\/\/.*$/gm, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/,(\s*[}\]])/g, "$1")
+    return JSON.parse(json)
+  } catch (e) {
+    console.warn(`[codenexum] could not parse ${cp}:`, e)
+    return null
+  }
+}
+
+function writeOpencodeConfig(cp: string, cfg: any) {
+  writeFileSync(cp, JSON.stringify(cfg, null, 2) + "\n")
+}
+
+function pickOpencodeConfigPath(): { path: string; cfg: any | null } {
+  const jsonPath = join(OPENCODE_DIR, "opencode.json")
+  const jsoncPath = join(OPENCODE_DIR, "opencode.jsonc")
+  if (existsSync(jsonPath)) return { path: jsonPath, cfg: readOpencodeConfig(jsonPath) }
+  if (existsSync(jsoncPath)) return { path: jsoncPath, cfg: readOpencodeConfig(jsoncPath) }
+  return { path: jsonPath, cfg: null }
+}
+
+function syncMcpEntry(cfg: any, mcpEntry: any): { cfg: any; changed: boolean } {
+  if (!cfg.mcp || typeof cfg.mcp !== "object") cfg.mcp = {}
+  const existing = cfg.mcp[MCP_KEY]
+  if (!existing || existing.url !== mcpEntry.url || existing.enabled === false) {
+    cfg.mcp[MCP_KEY] = mcpEntry
+    return { cfg, changed: true }
+  }
+  return { cfg, changed: false }
+}
+
+function syncPluginEntry(cfg: any): { cfg: any; changed: boolean } {
+  const plugins: string[] = Array.isArray(cfg.plugin) ? cfg.plugin : []
+  const filtered = plugins.filter((p: string) => p !== "@madtech/opencode-context-manager-plugin")
+  if (!filtered.includes("@codenexum/plugin")) {
+    filtered.push("@codenexum/plugin")
+    cfg.plugin = filtered
+    return { cfg, changed: true }
+  }
+  if (filtered.length !== plugins.length) {
+    cfg.plugin = filtered
+    return { cfg, changed: true }
+  }
+  return { cfg, changed: false }
+}
+
 function installOpencodePlugin() {
   if (!existsSync(PLUGIN_SRC)) {
     console.warn(`[codenexum] Plugin dist not found at ${PLUGIN_SRC} — skipping install`)
@@ -46,88 +101,80 @@ function installOpencodePlugin() {
     console.warn(`[codenexum] opencode config not found at ${OPENCODE_DIR} — skipping plugin install`)
     return
   }
+
   if (existsSync(OLD_PLUGIN_DIR)) {
     rmSync(OLD_PLUGIN_DIR, { recursive: true, force: true })
     console.log(`[codenexum] Removed old plugin at ${OLD_PLUGIN_DIR}`)
   }
+
   if (existsSync(OPENCODE_PLUGINS_DIR)) rmSync(OPENCODE_PLUGINS_DIR, { recursive: true, force: true })
   mkdirSync(OPENCODE_PLUGINS_DIR, { recursive: true })
+
+  const EXCLUDED = new Set(["index.bundled.js", "index.d.ts", "index.d.mts"])
   for (const f of readdirSync(PLUGIN_SRC)) {
+    if (EXCLUDED.has(f)) continue
     cpSync(join(PLUGIN_SRC, f), join(OPENCODE_PLUGINS_DIR, f), { recursive: true })
   }
-  if (existsSync(PLUGIN_PKG)) {
-    cpSync(PLUGIN_PKG, join(OPENCODE_PLUGINS_DIR, "package.json"))
-  }
-  console.log(`[codenexum] Plugin installed to ${OPENCODE_PLUGINS_DIR}`)
 
-  const configPath = join(OPENCODE_DIR, "opencode.jsonc")
-  const configPathJson = join(OPENCODE_DIR, "opencode.json")
-  const mcpUrl = `http://127.0.0.1:${MCP_PORT}`
-  const mcpEntry = { type: "remote", url: mcpUrl, enabled: true }
-
-  for (const cp of [configPath, configPathJson]) {
-    if (!existsSync(cp)) continue
-    const raw = readFileSync(cp, "utf-8")
-    const json = raw
-      .replace(/^(\s*)\/\/.*$/gm, "")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/,(\s*[}\]])/g, "$1")
-    let cfg: any
-    try { cfg = JSON.parse(json) } catch (e) { continue }
-    if (!cfg.mcp || typeof cfg.mcp !== "object") cfg.mcp = {}
-    const existing = cfg.mcp[MCP_KEY]
-    if (!existing || existing.url !== mcpUrl || existing.enabled === false) {
-      cfg.mcp[MCP_KEY] = mcpEntry
-      const updated = JSON.stringify(cfg, null, 2)
-      writeFileSync(cp, updated + "\n")
-      console.log(`[codenexum] Configured MCP server in ${cp}`)
-    }
-  }
-
-  if (!existsSync(configPath)) {
-    const initial = { plugin: ["@codenexum/plugin"], mcp: { [MCP_KEY]: mcpEntry } }
-    writeFileSync(configPath, JSON.stringify(initial, null, 2) + "\n")
-    console.log(`[codenexum] Created ${configPath} with @codenexum/plugin and MCP server`)
+  if (existsSync(PLUGIN_BUNDLED)) {
+    cpSync(PLUGIN_BUNDLED, join(OPENCODE_PLUGINS_DIR, "index.js"))
+  } else if (existsSync(join(PLUGIN_SRC, "index.js"))) {
+    console.warn(`[codenexum] Bundled plugin not found at ${PLUGIN_BUNDLED} — using unbundled dist (may fail if @opencode-ai/plugin cannot be resolved)`)
+    cpSync(join(PLUGIN_SRC, "index.js"), join(OPENCODE_PLUGINS_DIR, "index.js"))
+  } else {
+    console.error(`[codenexum] No plugin entry found in ${PLUGIN_SRC} — install aborted`)
     return
   }
-  const raw = readFileSync(configPath, "utf-8")
-  const json = raw
-    .replace(/^(\s*)\/\/.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/,(\s*[}\]])/g, "$1")
-  let cfg: any
-  try { cfg = JSON.parse(json) } catch (e) { console.warn("[codenexum] could not parse opencode.jsonc:", e); return }
-  const plugins: string[] = Array.isArray(cfg.plugin) ? cfg.plugin : []
-  const filtered = plugins.filter((p: string) => p !== "@madtech/opencode-context-manager-plugin")
-  if (!filtered.includes("@codenexum/plugin")) filtered.push("@codenexum/plugin")
-  const changed = filtered.length !== plugins.length || !plugins.includes("@codenexum/plugin")
-  if (changed) {
-    cfg.plugin = filtered
-    const updated = JSON.stringify(cfg, null, 2)
-    writeFileSync(configPath, updated + "\n")
-    console.log("[codenexum] Configured @codenexum/plugin in opencode.jsonc")
+
+  if (existsSync(PLUGIN_PKG)) {
+    const pkg = JSON.parse(readFileSync(PLUGIN_PKG, "utf-8"))
+    delete pkg.dependencies
+    delete pkg.devDependencies
+    writeFileSync(join(OPENCODE_PLUGINS_DIR, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
+  } else {
+    writeFileSync(
+      join(OPENCODE_PLUGINS_DIR, "package.json"),
+      JSON.stringify({ name: "@codenexum/plugin", version: "0.99.0", type: "module", main: "./index.js" }, null, 2) + "\n"
+    )
   }
+
+  const mcpUrl = `http://127.0.0.1:${MCP_PORT}`
+  const mcpEntry = { type: "remote", url: mcpUrl, enabled: true }
+  const { path: targetConfig, cfg: existingCfg } = pickOpencodeConfigPath()
+  const cfg = existingCfg ?? { plugin: [] as string[], mcp: {} as Record<string, any> }
+
+  const mcpSync = syncMcpEntry(cfg, mcpEntry)
+  const pluginSync = syncPluginEntry(mcpSync.cfg)
+
+  if (mcpSync.changed || pluginSync.changed || !existingCfg) {
+    writeOpencodeConfig(targetConfig, pluginSync.cfg)
+    if (!existingCfg) {
+      console.log(`[codenexum] Created ${targetConfig} with @codenexum/plugin and MCP server`)
+    } else {
+      const changes: string[] = []
+      if (mcpSync.changed) changes.push("MCP entry")
+      if (pluginSync.changed) changes.push("@codenexum/plugin")
+      console.log(`[codenexum] Updated ${targetConfig}: added ${changes.join(" and ")}`)
+    }
+  } else {
+    console.log(`[codenexum] ${targetConfig} already up to date (plugin + MCP entry present)`)
+  }
+
+  console.log(`[codenexum] Plugin installed to ${OPENCODE_PLUGINS_DIR}`)
 }
 
 function updateMcpConfig(port: number) {
-  const configPath = join(OPENCODE_DIR, "opencode.jsonc")
-  const configPathJson = join(OPENCODE_DIR, "opencode.json")
   const mcpUrl = `http://127.0.0.1:${port}`
   const mcpEntry = { type: "remote", url: mcpUrl, enabled: true }
-  for (const cp of [configPath, configPathJson]) {
-    if (!existsSync(cp)) continue
-    try {
-      const raw = readFileSync(cp, "utf-8")
-      const json = raw.replace(/^(\s*)\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/,(\s*[}\]])/g, "$1")
-      const cfg = JSON.parse(json)
-      if (!cfg.mcp || typeof cfg.mcp !== "object") cfg.mcp = {}
-      const existing = cfg.mcp[MCP_KEY]
-      if (!existing || existing.url !== mcpUrl || existing.enabled === false) {
-        cfg.mcp[MCP_KEY] = mcpEntry
-        writeFileSync(cp, JSON.stringify(cfg, null, 2) + "\n")
-        console.log(`[codenexum] MCP config updated to port ${port} in ${cp}`)
-      }
-    } catch {}
+  const configs = [join(OPENCODE_DIR, "opencode.json"), join(OPENCODE_DIR, "opencode.jsonc")]
+  for (const cp of configs) {
+    const cfg = readOpencodeConfig(cp)
+    if (!cfg) continue
+    const mcpSync = syncMcpEntry(cfg, mcpEntry)
+    if (mcpSync.changed) {
+      writeOpencodeConfig(cp, mcpSync.cfg)
+      console.log(`[codenexum] MCP config updated to port ${port} in ${cp}`)
+    }
   }
 }
 

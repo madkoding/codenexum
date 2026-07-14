@@ -28,7 +28,7 @@ async function callMcpJson(toolName: string, args: Record<string, any>): Promise
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tool: toolName, args }),
     })
-    const data = await res.json()
+    const data = (await res.json()) as { result?: any }
     if (!res.ok) return null
     return data.result ?? data
   } catch { return null }
@@ -52,6 +52,8 @@ interface CallInfo {
 }
 
 const pendingCalls = new Map<string, CallInfo>()
+
+let initialAnalyzeDone = false
 
 interface CacheEntry { output: string; ts: number; mtime?: number; filePath?: string }
 
@@ -320,7 +322,7 @@ const cmDashboard = tool({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: "cm_dashboard", args: {} }),
       })
-      const data = await res.json()
+      const data = (await res.json()) as { result?: any }
       return data.result ?? data ?? "Dashboard opened"
     } catch { return "Dashboard unavailable" }
   },
@@ -340,7 +342,7 @@ function recordTurnSavings(sessionID: string, saved: number) {
 async function flushTurnSavings(sessionID: string) {
   const cur = turnSavings.get(sessionID)
   if (!cur || cur.tokensSaved === 0) return
-  const projectDir = process.cwd()
+  const projectDir = pluginDirectory
   await callMcpJson("cm_log_event", {
     projectDir,
     eventType: "turn_savings",
@@ -350,182 +352,207 @@ async function flushTurnSavings(sessionID: string) {
   turnSavings.delete(sessionID)
 }
 
-export const plugin: Plugin = async (input: PluginInput) => ({
-  event: async ({ event }) => {
-    if (event.type === "session.idle") {
-      const sessionID = event.properties?.sessionID
-      if (sessionID) await flushTurnSavings(sessionID)
-    }
-  },
-  async "tool.execute.before"(input, output) {
-    const t = (input as { tool?: string })?.tool || ""
-    const callID = (input as { callID?: string })?.callID || ""
-    if (!t || !callID) return
+async function runInitialAnalyze() {
+  if (initialAnalyzeDone) return
+  if (!pluginDirectory) return
+  const ok = await callMcpJson("cm_analyze", { path: pluginDirectory })
+  if (ok !== null) initialAnalyzeDone = true
+}
 
-    const args = (output as { args?: any })?.args
-    if (!args) return
+let pluginLog: (msg: string, level?: "debug" | "info" | "warn" | "error") => void = () => {}
+let pluginClient: PluginInput["client"] | null = null
+let pluginDirectory: string = process.cwd()
 
-    const projectDir = process.cwd()
-    const settings = await getSettings()
-    const candidate = detectCandidate(t, args, projectDir, settings)
-    if (candidate) {
-      pendingCalls.set(callID, candidate)
-    }
-  },
-  async "tool.execute.after"(input, output) {
-    const t = (input as { tool?: string })?.tool || ""
-    const callID = (input as { callID?: string })?.callID || ""
-    const sessionID = (input as { sessionID?: string })?.sessionID || ""
-    if (!t || !callID) return
-
-    const info = pendingCalls.get(callID)
-    if (info) pendingCalls.delete(callID)
-
-    const cur = (output as { output?: string })?.output
-    if (typeof cur !== "string") return
-
-    const settings = await getSettings()
-
+export const plugin: Plugin = async (input: PluginInput) => {
+  pluginClient = input.client
+  pluginDirectory = input.directory || process.cwd()
+  pluginLog = (msg, level = "info") => {
     try {
-      let substitute: string | null = null
-      let cached = false
+      const body: any = { service: "codenexum", level, message: msg }
+      pluginClient?.app.log({ body }).catch(() => {})
+    } catch {}
+  }
+  pluginLog(`plugin loaded, cwd=${pluginDirectory}`)
+  loadPersistentCache(true)
+  void runInitialAnalyze()
+  return {
+    event: async ({ event }) => {
+      pluginLog(`event: ${event.type}`)
+      if (event.type === "session.idle") {
+        const sessionID = (event as { properties?: { sessionID?: string } }).properties?.sessionID
+        if (sessionID) await flushTurnSavings(sessionID)
+      }
+    },
+    "tool.execute.before": async (toolInput, output) => {
+      const t = toolInput?.tool || ""
+      const callID = toolInput?.callID || ""
+      const sessionID = toolInput?.sessionID || ""
+      if (!t || !callID) return
 
-      if (info && (info.tool === "read" || info.tool === "bash-read")) {
-        const cacheKey = `read:${info.projectDir}:${(info.path as string)}`
-        const now = Date.now()
-        const seen = sessionReadCounts.get(info.path as string)
-        const count = seen && now - seen.firstSeen < LOOP_WINDOW_MS ? seen.count + 1 : 1
-        sessionReadCounts.set(info.path as string, { count, firstSeen: seen?.firstSeen || now })
+      const args = output?.args
+      if (!args) return
 
-        if (count >= LOOP_THRESHOLD) {
-          const hint = `[codenexum] This file has been read ${count} times in this session. The indexed chunks are already available. Use the context_search tool to query specific symbols or functions instead of re-reading the entire file.`
-          if (hint.length < cur.length) {
-            const nativeChars = cur.length
-            const saved = Math.max(0, charsToTokens(nativeChars - hint.length))
-            ;(output as { output: string }).output = hint
-            callMcpJson("cm_log_event", {
-              projectDir: info.projectDir,
-              eventType: "loop_detected",
-              tokensSaved: saved,
-              meta: { tool: info.tool, path: info.path, count, nativeChars, substituteChars: hint.length },
+      const projectDir = input.directory || process.cwd()
+      void runInitialAnalyze()
+      const settings = await getSettings()
+      const candidate = detectCandidate(t, args, projectDir, settings)
+      if (candidate) pendingCalls.set(callID, candidate)
+    },
+    "tool.execute.after": async (toolInput, output) => {
+      const t = toolInput?.tool || ""
+      const callID = toolInput?.callID || ""
+      const sessionID = toolInput?.sessionID || ""
+      if (!t || !callID) return
+
+      const info = pendingCalls.get(callID)
+      if (info) pendingCalls.delete(callID)
+
+      const cur = (output as { output?: string })?.output
+      if (typeof cur !== "string") return
+
+      const settings = await getSettings()
+      const projectDir = info?.projectDir || input.directory || process.cwd()
+
+      try {
+        let substitute: string | null = null
+        let cached = false
+
+        if (info && (info.tool === "read" || info.tool === "bash-read")) {
+          const cacheKey = `read:${info.projectDir}:${(info.path as string)}`
+          const now = Date.now()
+          const seen = sessionReadCounts.get(info.path as string)
+          const count = seen && now - seen.firstSeen < LOOP_WINDOW_MS ? seen.count + 1 : 1
+          sessionReadCounts.set(info.path as string, { count, firstSeen: seen?.firstSeen || now })
+
+          if (count >= LOOP_THRESHOLD) {
+            const hint = `[codenexum] This file has been read ${count} times in this session. The indexed chunks are already available. Use the context_search tool to query specific symbols or functions instead of re-reading the entire file.`
+            if (hint.length < cur.length) {
+              const nativeChars = cur.length
+              const saved = Math.max(0, charsToTokens(nativeChars - hint.length))
+              ;(output as { output: string }).output = substituteString(cur, hint)
+              void callMcpJson("cm_log_event", {
+                projectDir: info.projectDir,
+                eventType: "loop_detected",
+                tokensSaved: saved,
+                meta: { tool: info.tool, path: info.path, count, nativeChars, substituteChars: hint.length },
+              })
+              if (settings.turnSavingsLog) recordTurnSavings(sessionID, saved)
+              return
+            }
+          }
+
+          if (settings.cache) {
+            const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs, info.path)
+            if (cachedValue !== null) {
+              substitute = cachedValue
+              cached = true
+            }
+          }
+          if (substitute === null) {
+            const snippet = await callMcpJson("cm_read_snippet", {
+              path: info.projectDir,
+              filePath: info.path,
             })
-            if (settings.turnSavingsLog) recordTurnSavings(sessionID, saved)
-            return
+            if (snippet && snippet.result != null) {
+              substitute = String(snippet.result)
+              if (settings.cache) cacheSet(cacheKey, substitute!, settings.cacheMaxEntries, info.path)
+            }
           }
-        }
-
-        if (settings.cache) {
-          const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs, info.path)
-          if (cachedValue !== null) {
-            substitute = cachedValue
-            cached = true
+        } else if (info && (info.tool === "grep" || info.tool === "glob")) {
+          const cacheKey = `grep:${info.projectDir}:${(info.query as string)}`
+          if (settings.cache) {
+            const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs)
+            if (cachedValue !== null) {
+              substitute = cachedValue
+              cached = true
+            }
           }
-        }
-        if (substitute === null) {
-          const snippet = await callMcpJson("cm_read_snippet", {
-            projectDir: info.projectDir,
-            filePath: info.path,
-          })
-          if (snippet && snippet.result != null) {
-            substitute = snippet.result
-            if (settings.cache) cacheSet(cacheKey, substitute!, settings.cacheMaxEntries, info.path)
+          if (substitute === null) {
+            const result = await callMcpJson("cm_search_snippet", {
+              path: info.projectDir,
+              query: info.query,
+            })
+            if (result && result.result != null) {
+              substitute = String(result.result)
+              if (settings.cache) cacheSet(cacheKey, substitute!, settings.cacheMaxEntries)
+            }
           }
-        }
-      } else if (info && (info.tool === "grep" || info.tool === "glob")) {
-        const cacheKey = `grep:${info.projectDir}:${(info.query as string)}`
-        if (settings.cache) {
+        } else if (info?.tool === "webfetch" && settings.cache) {
+          const cacheKey = `webfetch:${info.path}`
           const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs)
           if (cachedValue !== null) {
             substitute = cachedValue
             cached = true
+          } else {
+            cacheSet(cacheKey, cur, settings.cacheMaxEntries)
+          }
+        } else if (info?.tool === "websearch" && settings.cache) {
+          const cacheKey = `websearch:${info.query}`
+          const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs)
+          if (cachedValue !== null) {
+            substitute = cachedValue
+            cached = true
+          } else {
+            cacheSet(cacheKey, cur, settings.cacheMaxEntries)
           }
         }
-        if (substitute === null) {
-          const result = await callMcpJson("cm_search_snippet", {
-            projectDir: info.projectDir,
-            query: info.query,
-          })
-          if (result && result.result != null) {
-            substitute = result.result
-            if (settings.cache) cacheSet(cacheKey, substitute!, settings.cacheMaxEntries)
-          }
-        }
-      } else if (info?.tool === "webfetch" && settings.cache) {
-        const cacheKey = `webfetch:${info.path}`
-        const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs)
-        if (cachedValue !== null) {
-          substitute = cachedValue
-          cached = true
-        } else {
-          cacheSet(cacheKey, cur, settings.cacheMaxEntries)
-        }
-      } else if (info?.tool === "websearch" && settings.cache) {
-        const cacheKey = `websearch:${info.query}`
-        const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs)
-        if (cachedValue !== null) {
-          substitute = cachedValue
-          cached = true
-        } else {
-          cacheSet(cacheKey, cur, settings.cacheMaxEntries)
-        }
-      }
 
-      if (substitute && substitute.length < cur.length) {
-        const nativeChars = cur.length
-        const saved = Math.max(0, charsToTokens(nativeChars - substitute.length))
-        ;(output as { output: string }).output = substitute
-        callMcpJson("cm_log_event", {
-          projectDir: info!.projectDir,
-          eventType: "index_substitute",
-          tokensSaved: saved,
-          meta: { tool: info!.tool, path: info!.path, query: info!.query, nativeChars, substituteChars: substitute.length, cached },
-        })
-        callMcpJson("cm_log_event", {
-          projectDir: info!.projectDir,
-          eventType: "file_read",
-          tokensSaved: 0,
-          meta: { tool: info!.tool, path: info!.path },
-        })
-        if (settings.turnSavingsLog) recordTurnSavings(sessionID, saved)
-        return
-      }
-
-      if (settings.autoCompress && cur.length > settings.compressThreshold && isCompressibleTool(t)) {
-        const compressed = await callMcpJson("cm_compress_output", {
-          toolID: t,
-          output: cur,
-        })
-        if (compressed && typeof compressed.result === "string" && compressed.result.length < cur.length) {
-          const saved = Math.max(0, charsToTokens(cur.length - compressed.result.length))
-          ;(output as { output: string }).output = compressed.result
-          callMcpJson("cm_log_event", {
-            projectDir: info?.projectDir || process.cwd(),
-            eventType: "compression",
+        if (substitute && substitute.length < cur.length) {
+          const nativeChars = cur.length
+          const saved = Math.max(0, charsToTokens(nativeChars - substitute.length))
+          ;(output as { output: string }).output = substituteString(cur, substitute)
+          void callMcpJson("cm_log_event", {
+            projectDir: info!.projectDir,
+            eventType: "index_substitute",
             tokensSaved: saved,
-            meta: { tool: t, nativeChars: cur.length, compressedChars: compressed.result.length, interceptSource: info ? "read-grep-fallback" : "generic" },
+            meta: { tool: info!.tool, path: info!.path, query: info!.query, nativeChars, substituteChars: substitute.length, cached },
+          })
+          void callMcpJson("cm_log_event", {
+            projectDir: info!.projectDir,
+            eventType: "file_read",
+            tokensSaved: 0,
+            meta: { tool: info!.tool, path: info!.path },
           })
           if (settings.turnSavingsLog) recordTurnSavings(sessionID, saved)
+          return
         }
+
+        if (settings.autoCompress && cur.length > settings.compressThreshold && isCompressibleTool(t)) {
+          const compressed = await callMcpJson("cm_compress_output", {
+            toolID: t,
+            output: cur,
+          })
+          if (compressed && typeof compressed.result === "string" && compressed.result.length < cur.length) {
+            const saved = Math.max(0, charsToTokens(cur.length - compressed.result.length))
+            ;(output as { output: string }).output = substituteString(cur, compressed.result)
+            void callMcpJson("cm_log_event", {
+              projectDir,
+              eventType: "compression",
+              tokensSaved: saved,
+              meta: { tool: t, nativeChars: cur.length, compressedChars: compressed.result.length, interceptSource: info ? "read-grep-fallback" : "generic" },
+            })
+            if (settings.turnSavingsLog) recordTurnSavings(sessionID, saved)
+          }
+        }
+      } catch (e: any) {
+        pluginLog(`tool.execute.after failed: ${e?.message || e}`, "warn")
       }
-    } catch {
-      // intercept failed silently — native output remains unchanged
-    }
-  },
-  async init() {
-    const s = await getSettings().catch(() => defaultSettings())
-    loadPersistentCache(s.persistentCache)
-    const cwd = process.cwd()
-    if (cwd) await callMcp("cm_analyze", { path: cwd })
-  },
-  tool: {
-    context_search: cmSearch,
-    context_related: cmRelated,
-    context_impact: cmImpact,
-    context_stats: cmStats,
-    context_compression: cmCompression,
-    context_analyze: cmAnalyze,
-    context_dashboard: cmDashboard,
-  },
-})
+    },
+    tool: {
+      context_search: cmSearch,
+      context_related: cmRelated,
+      context_impact: cmImpact,
+      context_stats: cmStats,
+      context_compression: cmCompression,
+      context_analyze: cmAnalyze,
+      context_dashboard: cmDashboard,
+    },
+  }
+}
+
+function substituteString(original: string, replacement: string): string {
+  if (replacement.length <= original.length) return replacement
+  return replacement.slice(0, original.length)
+}
 
 export default plugin

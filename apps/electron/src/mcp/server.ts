@@ -1,11 +1,12 @@
 import { createServer, IncomingMessage, ServerResponse } from "http"
 import { getProjectStats, getProjectAggregate, getCompressionStatus, getDashboardState, getGlobalAnalytics } from "./stats.js"
-import { ensureProject } from "./auto-register.js"
+import { ensureProject, updateProjectStats } from "./auto-register.js"
 import { getRegistryPath, getProjectDbPath } from "./db-paths.js"
 import { existsSync, rmSync } from "fs"
 import { DatabaseSync } from "node:sqlite"
 import { getDb, dropDb } from "./db-pool.js"
 import { indexProject, startWatching, stopWatching } from "./indexer.js"
+import { autoDiscoverAndIndex } from "./auto-discover.js"
 import { initSchema, dbSetSchemaVersion, SCHEMA_VERSION, dbInsertChunks, dbInsertEdges, dbSetFileHash, dbSetMeta, dbSearch, dbFindRelated, dbFindImpacted, dbGetMeta, dbGetChunksForFile } from "@codenexum/sql"
 import { parseSymbolRef, charsToTokens, formatSearchResults } from "@codenexum/core"
 import { logEvent } from "./usage.js"
@@ -49,6 +50,30 @@ function json(res: ServerResponse, data: any, status = 200) {
   res.end(JSON.stringify(data))
 }
 
+const CACHE_TTL_MS = 5000
+const _cache = new Map<string, { ts: number; data: any }>()
+
+function cacheGet<T>(key: string): T | undefined {
+  const e = _cache.get(key)
+  if (!e) return undefined
+  if (Date.now() - e.ts > CACHE_TTL_MS) {
+    _cache.delete(key)
+    return undefined
+  }
+  return e.data as T
+}
+
+function cacheSet(key: string, data: any): void {
+  _cache.set(key, { ts: Date.now(), data })
+}
+
+function cacheInvalidate(prefix?: string): void {
+  if (!prefix) { _cache.clear(); return }
+  for (const k of _cache.keys()) {
+    if (k.startsWith(prefix)) _cache.delete(k)
+  }
+}
+
 function error(res: ServerResponse, msg: string, status = 400) {
   json(res, { error: msg }, status)
 }
@@ -73,10 +98,12 @@ function readBody(req: IncomingMessage): Promise<any> {
 }
 
 function getProjects() {
+  const cached = cacheGet<any[]>("projects")
+  if (cached) return cached
   const regPath = getRegistryPath()
   if (!existsSync(regPath)) return []
   const db = new DatabaseSync(regPath)
-  const rows = db.prepare("SELECT id, path, name, dbPath, lastSeen FROM projects ORDER BY lastSeen DESC").all() as any[]
+  const rows = db.prepare("SELECT id, path, name, dbPath, lastSeen, chunks, files FROM projects ORDER BY lastSeen DESC").all() as any[]
   const active: any[] = []
   const dead: string[] = []
   for (const p of rows) {
@@ -84,14 +111,8 @@ function getProjects() {
       dead.push(p.id)
       continue
     }
-    let chunks = 0, files = 0
-    try {
-      const pdb = new DatabaseSync(p.dbPath)
-      const c = pdb.prepare("SELECT count(*) as n FROM chunks_fts").get() as any
-      const f = pdb.prepare("SELECT count(DISTINCT file) as n FROM chunks_fts").get() as any
-      chunks = c?.n || 0; files = f?.n || 0
-      pdb.close()
-    } catch {}
+    const chunks = p.chunks || 0
+    const files = p.files || 0
     active.push({ id: p.id, path: p.path, name: p.name, dbPath: p.dbPath, lastSeen: p.lastSeen, chunks, files })
   }
   if (dead.length) {
@@ -101,6 +122,7 @@ function getProjects() {
     console.log(`[codenexum] Cleaned ${dead.length} stale/tmp project(s): ${dead.join(", ")}`)
   }
   db.close()
+  cacheSet("projects", active)
   return active
 }
 
@@ -186,6 +208,7 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
             try { rmSync(proj.dbPath) } catch {}
           }
         }
+        cacheInvalidate()
         return { result: { ok: true } }
       }
 
@@ -199,6 +222,7 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         const r = reg.prepare("UPDATE projects SET name = ? WHERE id = ?").run(name, id)
         reg.close()
         if (r.changes === 0) return { error: "project not found" }
+        cacheInvalidate()
         return { result: { ok: true, project: { id, name } } }
       }
 
@@ -226,22 +250,44 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
 
       case "cm_aggregate": {
         const projectDir = resolvePath(args)
+        const cacheKey = `aggregate:${projectDir || "default"}`
+        const cached = cacheGet<any>(cacheKey)
+        if (cached) return { result: cached }
+        let result: any
         if (!projectDir) {
           const projects = getProjects()
-          if (projects.length === 0) return { result: { byType: {}, byLang: {}, topFiles: [] } }
-          return { result: getProjectAggregate(projects[0].path) }
+          if (projects.length === 0) result = { byType: {}, byLang: {}, topFiles: [] }
+          else result = getProjectAggregate(projects[0].path)
+        } else {
+          result = getProjectAggregate(projectDir)
         }
-        return { result: getProjectAggregate(projectDir) }
+        cacheSet(cacheKey, result)
+        return { result }
       }
 
-      case "cm_compression":
-        return { result: getCompressionStatus() }
+      case "cm_compression": {
+        const cached = cacheGet<any>("compression")
+        if (cached) return { result: cached }
+        const result = getCompressionStatus()
+        cacheSet("compression", result)
+        return { result }
+      }
 
-      case "cm_dashboard":
-        return { result: getDashboardState() }
+      case "cm_dashboard": {
+        const cached = cacheGet<any>("dashboard")
+        if (cached) return { result: cached }
+        const result = getDashboardState()
+        cacheSet("dashboard", result)
+        return { result }
+      }
 
-      case "cm_analytics":
-        return { result: getGlobalAnalytics() }
+      case "cm_analytics": {
+        const cached = cacheGet<any>("analytics")
+        if (cached) return { result: cached }
+        const result = getGlobalAnalytics()
+        cacheSet("analytics", result)
+        return { result }
+      }
 
       case "cm_analyze": {
         const path = resolvePath(args)
@@ -265,7 +311,9 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         dbSetSchemaVersion(db, SCHEMA_VERSION)
         const totalChunks = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
         const totalFiles = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
+        updateProjectStats(path, totalChunks, totalFiles)
         startWatching(path, db)
+        cacheInvalidate()
         return { result: { ok: true, path, chunks: totalChunks, files: totalFiles, addedChunks: chunks.length, addedFiles: Object.keys(fileHashes).length, elapsedMs: Date.now() - start, capped } }
       }
 
@@ -311,6 +359,8 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         if (!projectDir) return { error: "missing projectDir" }
         logEvent(projectDir, args?.eventType || "search", { tokensSaved: args?.tokensSaved || 0, tokensUsed: args?.tokensUsed || 0, meta: args?.meta })
         sseBroadcast("usage", { type: args?.eventType, projectDir, tokensSaved: args?.tokensSaved || 0 })
+        cacheInvalidate("analytics")
+        cacheInvalidate("dashboard")
         return { result: true }
       }
       case "cm_read_snippet": {
@@ -551,6 +601,7 @@ export function startMcpServer(port?: number) {
           const ap = (server.address() as any)?.port || p + 1
           console.log(`[codenexum MCP] Server listening on http://127.0.0.1:${ap}`)
           resolve({ close: () => server.close(), port: ap })
+          autoDiscoverAndIndex().catch((e) => console.warn(`[codenexum] auto-discover crashed: ${e.message}`))
         })
       } else {
         console.error(`[codenexum MCP] Server error:`, err)
@@ -561,6 +612,7 @@ export function startMcpServer(port?: number) {
       const ap = (server.address() as any)?.port || p
       console.log(`[codenexum MCP] Server listening on http://127.0.0.1:${ap}`)
       resolve({ close: () => server.close(), port: ap })
+      autoDiscoverAndIndex().catch((e) => console.warn(`[codenexum] auto-discover crashed: ${e.message}`))
     })
   })
 }

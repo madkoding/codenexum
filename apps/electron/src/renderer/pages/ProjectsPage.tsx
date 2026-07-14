@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, type ComponentType } from "react"
 import { Link } from "react-router-dom"
 import { Card, EmptyState, LoadingScreen } from "../components/ui"
 import { fmt, fmtK, pct, relTime } from "../lib/format"
+import type { Project, ProjectSummary } from "../types"
 import {
   BarChart3, Zap, Target, FolderGit2,
   Search, Sparkles, FileText, Database, Minimize2, Brain,
@@ -12,27 +13,10 @@ import {
   PieChart, Pie, Cell, AreaChart, Area, Tooltip,
 } from "recharts"
 
-interface Project {
-  id: string
-  path: string
-  name: string
-  dbPath: string
-  lastSeen: string
-}
-
 interface AggregateData {
   byType: Record<string, number>
   byLang: Record<string, number>
   topFiles: { path: string; count: number }[]
-}
-
-interface ProjectSummary extends Project {
-  chunks: number
-  files: number
-  edges: number
-  measuredSavings?: number
-  searches?: number
-  efficiencyRatio?: number
 }
 
 interface AnalyticsData {
@@ -194,13 +178,18 @@ export function ProjectsPage() {
     try {
       const url = await window.electronAPI.invoke("get-mcp-url")
       if (!url) { setError("MCP server URL not available"); setLoading(false); return }
-      const [pRes, aRes, anRes, ...statsRes] = await Promise.all([
-        fetch(`${url}/tools/call`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tool: "cm_projects_list", args: {} }),
-          signal: abort.signal,
-        }),
+      const pRes = await fetch(`${url}/tools/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: "cm_projects_list", args: {} }),
+        signal: abort.signal,
+      })
+      if (!pRes.ok) { setError(`Server returned ${pRes.status}`); setLoading(false); return }
+      const pData = await pRes.json()
+      if (pData.error) { setError(typeof pData.error === "string" ? pData.error : pData.error.message || JSON.stringify(pData.error)); setLoading(false); return }
+      const list = (pData.result || pData.projects || []) as Project[]
+      setProjects(list.map(p => ({ ...p, chunks: p.chunks || 0, files: p.files || 0, edges: 0, measuredSavings: 0, searches: 0, efficiencyRatio: 0 })))
+      const [aRes, anRes] = await Promise.all([
         fetch(`${url}/tools/call`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -213,37 +202,24 @@ export function ProjectsPage() {
           body: JSON.stringify({ tool: "cm_analytics", args: {} }),
           signal: abort.signal,
         }),
-        fetch(`${url}/tools/call`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tool: "cm_projects_list", args: {} }),
-          signal: abort.signal,
-        }).then(async (r) => {
-          if (!r.ok) return []
-          const data = await r.json()
-          const list = (data.result || []) as Project[]
-          return Promise.all(list.slice(0, 5).map(async (p) => {
-            try {
-              const sRes = await fetch(`${url}/tools/call`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tool: "cm_stats", args: { projectDir: p.path } }),
-                signal: abort.signal,
-              })
-              if (!sRes.ok) return p
-              const sData = await sRes.json()
-              const s = sData.result || {}
-              return { ...p, chunks: s.chunks || 0, files: s.files || 0, edges: s.edges || 0, measuredSavings: s.measuredSavings || 0, searches: s.searches || 0, efficiencyRatio: s.efficiencyRatio || 0 }
-            } catch { return p }
-          }))
-        }),
       ])
-      if (!pRes.ok) { setError(`Server returned ${pRes.status}`); setLoading(false); return }
-      const pData = await pRes.json()
-      if (pData.error) { setError(typeof pData.error === "string" ? pData.error : pData.error.message || JSON.stringify(pData.error)); setLoading(false); return }
-      const list = (pData.result || pData.projects || []) as Project[]
-      const enriched = (statsRes[0] && Array.isArray(statsRes[0]) && statsRes[0].length > 0) ? statsRes[0] : list.map(p => ({ ...p, chunks: 0, files: 0, edges: 0 }))
-      setProjects(enriched as ProjectSummary[])
+      const top5 = list.slice(0, 5)
+      const enrichedTop = await Promise.all(top5.map(async (p) => {
+        try {
+          const sRes = await fetch(`${url}/tools/call`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tool: "cm_stats", args: { projectDir: p.path } }),
+            signal: abort.signal,
+          })
+          if (!sRes.ok) return p
+          const sData = await sRes.json()
+          const s = sData.result || {}
+          return { ...p, chunks: s.chunks || 0, files: s.files || 0, edges: s.edges || 0, measuredSavings: s.measuredSavings || 0, searches: s.searches || 0, efficiencyRatio: s.efficiencyRatio || 0 }
+        } catch { return p }
+      }))
+      const enrichedMap = new Map<ProjectSummary["id"], ProjectSummary>(enrichedTop.map(p => [p.id, p as ProjectSummary]))
+      setProjects(prev => prev.map(p => enrichedMap.get(p.id) || (p as ProjectSummary)))
       if (aRes.ok) {
         const aData = await aRes.json()
         setAgg(aData.result || aData.aggregate || null)

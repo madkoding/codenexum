@@ -37,7 +37,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     <nav className="h-full flex flex-col">
       <div className="px-4 py-5 flex items-center gap-2 border-b border-gray-800">
         <Activity size={20} className="text-accent shrink-0" />
-        <span className="font-bold text-sm">CodeNexum v0.99.0</span>
+        <span className="font-bold text-sm">CodeNexum v0.99.1</span>
       </div>
 
       <div className="px-2 py-3 space-y-1">

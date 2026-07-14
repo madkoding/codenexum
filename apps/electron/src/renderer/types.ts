@@ -4,12 +4,17 @@ export interface Project {
   name: string
   dbPath: string
   lastSeen: string
+  chunks?: number
+  files?: number
 }
 
 export interface ProjectSummary extends Project {
   chunks: number
   files: number
   edges: number
+  measuredSavings?: number
+  searches?: number
+  efficiencyRatio?: number
 }
 
 export interface ProjectStats extends ProjectSummary {
