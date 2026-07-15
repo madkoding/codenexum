@@ -1,0 +1,73 @@
+name: Lint PR
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  conventional-title:
+    name: Conventional Commits title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install commitlint
+        run: |
+          npm install --no-save \
+            @commitlint/cli@^19 \
+            @commitlint/config-conventional@^19
+      - name: Lint PR title
+        if: github.event_name == 'pull_request'
+        uses: wagoid/commitlint-github-action@v5
+        with:
+          configFile: commitlint.config.cjs
+          failOnWarning: true
+
+  template-check:
+    name: PR template filled
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check required sections
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if echo "$BODY" | grep -q "<!--"; then
+            echo "PR body still contains template placeholders. Fill the template." >&2
+            exit 1
+          fi
+          for section in "## Summary" "## Scope" "## Testing" "## Checklist"; do
+            if ! echo "$BODY" | grep -qF "$section"; then
+              echo "Missing required section: $section" >&2
+              exit 1
+            fi
+          done
+          echo "Template OK"
+
+  target-branch:
+    name: Target branch is develop
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Reject PRs to main
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ "$BASE" = "main" ]; then
+            echo "PRs to main are not accepted. Open against develop." >&2
+            exit 1
+          fi
+          echo "Base branch $BASE is OK"

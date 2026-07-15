@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security issue
+    url: https://github.com/madkoding/codenexum/security/advisories/new
+    about: Do not file public issues for security problems. Use the private advisory form.
+  - name: Discussions
+    url: https://github.com/madkoding/codenexum/discussions
+    about: Questions, ideas, and general help go here, not in issues.
