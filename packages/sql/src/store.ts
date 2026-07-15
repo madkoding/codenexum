@@ -73,6 +73,21 @@ export function initSchema(db: Db): void {
   // Mirror the distinct file list into files_indexed to make those checks
   // O(log n) via the primary key.
   db.exec("CREATE TABLE IF NOT EXISTS files_indexed (file TEXT PRIMARY KEY)")
+
+  // Must exist before the indexes below — this table is also created
+  // lazily by apps/electron/src/mcp/usage.ts's ensureUsageSchema(), but that
+  // only runs when a usage event is actually logged. initSchema() runs
+  // first (on the very first analyze of a fresh project db), so without
+  // this the two CREATE INDEX statements below fail with
+  // "no such table: main.usage_events" on every first-time analyze.
+  db.exec(`CREATE TABLE IF NOT EXISTS usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    tokens_saved INTEGER DEFAULT 0,
+    tokens_used INTEGER DEFAULT 0,
+    meta TEXT,
+    ts TEXT DEFAULT CURRENT_TIMESTAMP
+  )`)
   db.exec("CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts)")
   db.exec("CREATE INDEX IF NOT EXISTS idx_usage_events_type ON usage_events(event_type)")
 
@@ -200,6 +215,10 @@ export function dbClear(db: Db): void {
   db.exec("DELETE FROM file_hashes")
   db.exec("DELETE FROM meta")
   db.exec("DELETE FROM edges")
+  // files_indexed was added later (denormalized file-membership index, see
+  // its CREATE TABLE comment in initSchema) and dbClear was never updated
+  // to include it — left dbFileCount() reporting stale counts after a clear.
+  db.exec("DELETE FROM files_indexed")
 }
 
 export function dbDeleteChunksForFile(db: Db, file: string): void {
