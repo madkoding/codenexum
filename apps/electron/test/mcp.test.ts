@@ -47,6 +47,20 @@ test("isGeneratedPath detects minified files", () => {
   expect(isGeneratedPath("index.ts")).toBe(false)
 })
 
+test("isGeneratedPath excludes mobile build directories (ios/android/Pods/.expo/.gradle)", () => {
+  expect(isGeneratedPath("/repo/ios/Pods/React/Base.h")).toBe(true)
+  expect(isGeneratedPath("/repo/android/.gradle/caches/foo.bin")).toBe(true)
+  expect(isGeneratedPath("/repo/.expo/devices.json")).toBe(true)
+  expect(isGeneratedPath("/repo/src/screens/Home.tsx")).toBe(false)
+})
+
+test("isGeneratedPath excludes serverless/IaC build output (.serverless/cdk.out/.terraform)", () => {
+  expect(isGeneratedPath("/repo/backend/.serverless/handler.zip")).toBe(true)
+  expect(isGeneratedPath("/repo/infra/cdk.out/manifest.json")).toBe(true)
+  expect(isGeneratedPath("/repo/infra/.terraform/providers/foo")).toBe(true)
+  expect(isGeneratedPath("/repo/infra/lib/publisher-stack.ts")).toBe(false)
+})
+
 test("isOversized flags large files", () => {
   const fp = join(tmpDir, "big.ts")
   writeFileSync(fp, "x".repeat(100))
