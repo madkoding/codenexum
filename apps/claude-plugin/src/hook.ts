@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     projectDir: cwd,
     eventType: candidate.kind === "read" ? "index_substitute" : "compression",
     tokensSaved: charsToTokens(originalText.length - compressed.length),
-    meta: { tool: toolName, path: candidate.path, toolID: candidate.toolID },
+    meta: { tool: toolName, path: candidate.path, toolID: candidate.toolID, sessionId },
   })
 
   process.stdout.write(JSON.stringify({

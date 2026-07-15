@@ -19,8 +19,9 @@ This has **not** been installed as a global hook (`~/.claude/settings.json`) yet
 1. **`SessionStart`** — calls `cm_analyze` once, to make sure the current project is indexed (mirrors `runInitialAnalyze()` in `apps/plugin`).
 2. **`PostToolUse`** (matcher `Read|Grep|Glob|Bash|Write|Edit`):
    - `Write`/`Edit` — not compressed, just recorded (see anti-stale below).
-   - `Read` → `cm_read_snippet`, `Grep`/`Glob` → `cm_search_snippet`, `Bash` (only `git`/`npm`/`yarn`/`pnpm`/`node`/`npx`/`tsc`/`test`/`jest`/`vitest`/`pytest`/`cargo`/`build`/`make`/`cmake`, or a `cat`/`head`/`tail` inside Bash treated as a Read) → `cm_compress_output`.
-   - If the local server returns something shorter than the original output, the hook emits `updatedToolOutput` to replace it. Otherwise the original output passes through untouched.
+   - `Read` → `cm_read_snippet`, `Bash` (only `git`/`npm`/`yarn`/`pnpm`/`node`/`npx`/`tsc`/`test`/`jest`/`vitest`/`pytest`/`cargo`/`build`/`make`/`cmake`, or a `cat`/`head`/`tail` inside Bash treated as a Read) → `cm_compress_output`.
+   - **`Grep`/`Glob` are never substituted.** Claude Code validates a `PostToolUse` hook's `updatedToolOutput` against the *original* tool's response shape (confirmed live via `claude -d hooks`). `Read`'s response is `{ type, file: { content, ... } }` and `Bash`'s is `{ stdout, ... }` — both reconstructable by swapping one field (see `src/substitute.ts`). `Grep`/`Glob` return `{ filenames, numFiles, totalFiles }`, a structured list with no free-text field, so CodeNexum's formatted search-index text has nowhere faithful to go.
+   - If the local server returns something shorter than the original output, the hook emits `updatedToolOutput` (reconstructing the tool's native shape) to replace it. Otherwise the original output passes through untouched.
 3. **Guards, all evaluated before any network call:**
    - **Denylist** (`src/denylist.ts`) — sensitive paths are never sent to CodeNexum, substitution or not.
    - **Anti-stale** (`src/session-store.ts`) — if a file was `Write`/`Edit`-ed earlier in the same Claude Code session, a later `Read` of it is never substituted (the local index may not have caught up with the edit yet — there's no freshness metadata to check otherwise).
@@ -55,4 +56,13 @@ Requires the CodeNexum Electron app to be running (tray icon, serving on `127.0.
 bun test apps/claude-plugin/test
 ```
 
-Covers the denylist patterns, the Read/Grep/Glob/Bash detection logic (including that `curl`/`ssh`/`scp`/`wget` are excluded), and the anti-stale session store.
+Covers the denylist patterns, the Read/Bash detection logic (including that `curl`/`ssh`/`scp`/`wget` are excluded, and that Grep/Glob never produce a candidate), the anti-stale session store, and the shape-reconstruction logic against real captured Read/Bash response shapes.
+
+## Savings per session
+
+CodeNexum's own dashboard only shows cumulative totals per project, with no per-session breakdown. Every substitution is appended to `~/.codenexum/audit.log` with its `sessionId`, so:
+
+```sh
+node apps/claude-plugin/scripts/session-report.mjs                 # table of all sessions, most recent first
+node apps/claude-plugin/scripts/session-report.mjs <sessionId>     # per-file/command detail for one session (prefix match ok)
+```
