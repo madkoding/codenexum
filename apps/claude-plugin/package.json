@@ -1,0 +1,14 @@
+{
+  "name": "@codenexum/claude-plugin",
+  "version": "0.99.9",
+  "description": "Claude Code hook — thin HTTP client to the CodeNexum Electron app (equivalent of apps/plugin, for Claude Code instead of opencode)",
+  "type": "module",
+  "main": "./dist/hook.js",
+  "scripts": {
+    "build": "tsc",
+    "bundle": "bun build ./dist/hook.js --target=node --format=esm --outfile=./dist/hook.mjs --external none"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}
