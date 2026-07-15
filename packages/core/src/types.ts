@@ -28,6 +28,11 @@ export const IGNORE = new Set([
   "node_modules", "venv", "_venv", ".venv", ".git", "__pycache__",
   ".next", "dist", "build", "target", "bin", "obj", ".opencode",
   ".config", ".cache", ".vscode", ".idea", "vendor", "elixir_build",
+  // Mobile (React Native / Expo) and IaC/serverless build output — these
+  // can hold tens of thousands of vendored/generated files (CocoaPods,
+  // Gradle caches, CDK/Terraform synth output, Lambda deployment zips) that
+  // previously made a full analyze pathologically slow on real projects.
+  "ios", "android", ".expo", "Pods", ".gradle", ".serverless", "cdk.out", ".terraform",
 ])
 
 export const CODE_EXTS = new Set([

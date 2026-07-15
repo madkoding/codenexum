@@ -30,7 +30,13 @@ export function getMaxFileBytes(): number {
 }
 
 const GENERATED_NAME_PATTERNS = [/\.min\./i, /\.umd\./i, /\.prod\./i, /\.dev\./i, /bundle/i, /generated/i]
-const GENERATED_DIR_NAMES = new Set(["dist", "build", "target", "node_modules", ".cache", "__pycache__", "vendor", "coverage", ".next"])
+// Kept in sync with packages/core/src/types.ts IGNORE — this set is what
+// walk() actually prunes during a real analyze, so a mismatch here would
+// silently reintroduce the slow-walk problem those extra entries fix.
+const GENERATED_DIR_NAMES = new Set([
+  "dist", "build", "target", "node_modules", ".cache", "__pycache__", "vendor", "coverage", ".next",
+  "ios", "android", ".expo", "Pods", ".gradle", ".serverless", "cdk.out", ".terraform",
+])
 
 export function isGeneratedPath(fp: string): boolean {
   const parts = fp.split(/[/\\]/)
