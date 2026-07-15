@@ -73,6 +73,14 @@ export function initSchema(db: Db): void {
   // Mirror the distinct file list into files_indexed to make those checks
   // O(log n) via the primary key.
   db.exec("CREATE TABLE IF NOT EXISTS files_indexed (file TEXT PRIMARY KEY)")
+  db.exec(`CREATE TABLE IF NOT EXISTS usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT,
+    tokens_saved INTEGER,
+    tokens_used INTEGER,
+    meta TEXT,
+    ts INTEGER
+  )`)
   db.exec("CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts)")
   db.exec("CREATE INDEX IF NOT EXISTS idx_usage_events_type ON usage_events(event_type)")
 
@@ -200,6 +208,7 @@ export function dbClear(db: Db): void {
   db.exec("DELETE FROM file_hashes")
   db.exec("DELETE FROM meta")
   db.exec("DELETE FROM edges")
+  db.exec("DELETE FROM files_indexed")
 }
 
 export function dbDeleteChunksForFile(db: Db, file: string): void {
