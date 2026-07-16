@@ -41,3 +41,38 @@ export function LoadingScreen({ message = "Loading…" }: { message?: string }) 
     </div>
   )
 }
+
+export type Period = "year" | "month" | "week" | "day"
+
+export const PERIOD_LABELS: Record<Period, string> = {
+  year: "Año",
+  month: "Mes",
+  week: "Semana",
+  day: "Día",
+}
+
+export function PeriodSwitcher({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
+  const order: Period[] = ["year", "month", "week", "day"]
+  return (
+    <div className="inline-flex items-center rounded-md border border-gray-800 bg-bg/60 p-0.5 text-[11px]">
+      {order.map((p) => {
+        const active = p === value
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            className={
+              "px-2.5 py-1 rounded transition-colors " +
+              (active
+                ? "bg-accent/20 text-accent font-semibold"
+                : "text-muted hover:text-zinc-200")
+            }
+          >
+            {PERIOD_LABELS[p]}
+          </button>
+        )
+      })}
+    </div>
+  )
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, type ComponentType } from "react"
 import { Link } from "react-router-dom"
-import { Card, EmptyState, LoadingScreen } from "../components/ui"
+import { Card, EmptyState, LoadingScreen, Spinner, PeriodSwitcher, PERIOD_LABELS, type Period } from "../components/ui"
 import { fmt, fmtK, pct, relTime } from "../lib/format"
 import type { Project, ProjectSummary } from "../types"
 import {
@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area, Tooltip,
+  PieChart, Pie, Cell, Tooltip, Legend,
 } from "recharts"
 
 interface AggregateData {
@@ -19,13 +19,56 @@ interface AggregateData {
   topFiles: { path: string; count: number }[]
 }
 
+type Mechanism = "indexSubstitution" | "searchSnippets" | "compression" | "semanticCompression" | "cacheHit"
+
 interface AnalyticsData {
-  activityTimeline: { hour: string; count: number; saved: number }[]
+  period?: Period
+  granularity?: "hour" | "day" | "month" | "year"
+  activityTimeline: { hour: string; count: number; saved: number; byMechanism: Record<Mechanism, number> }[]
   cumulativeSavings: { ts: string; total: number }[]
   topQueries: { query: string; count: number; saved: number }[]
   recentActivity: { type: string; target: string; tokensSaved: number; ts: string; project: string }[]
   indexHealth: { id: string; name: string; path: string; lastIndexed: string | null; chunks: number; files: number; zeroChunkFiles: number }[]
   hotFiles: { path: string; count: number; project: string; chunks: number }[]
+}
+
+const MECHANISM_COLORS: Record<Mechanism, string> = {
+  indexSubstitution: "#3b82f6",
+  searchSnippets: "#22c55e",
+  compression: "#f59e0b",
+  semanticCompression: "#ec4899",
+  cacheHit: "#06b6d4",
+}
+
+const MECHANISM_LABELS: Record<Mechanism, string> = {
+  indexSubstitution: "Index subst.",
+  searchSnippets: "Search snippets",
+  compression: "Compression",
+  semanticCompression: "Semantic",
+  cacheHit: "Cache hit",
+}
+
+const WEEKDAY_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
+const MONTH_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+function formatBucketLabel(key: string, granularity: "hour" | "day" | "month" | "year" | undefined): string {
+  if (!key) return ""
+  if (granularity === "year" || granularity === "month") {
+    const m = parseInt(key.slice(5, 7), 10)
+    return m >= 1 && m <= 12 ? MONTH_SHORT[m - 1] : key
+  }
+  if (granularity === "day") {
+    const d = new Date(key + "T00:00:00Z")
+    if (!Number.isNaN(d.getTime())) {
+      return `${WEEKDAY_SHORT[d.getUTCDay()]} ${d.getUTCDate()}`
+    }
+    return key
+  }
+  if (granularity === "hour" || key.length >= 13) {
+    const t = key.length >= 16 ? key.slice(11, 16) : key.slice(11, 13) + ":00"
+    return t
+  }
+  return key
 }
 
 const COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b92a8", "#ec4899", "#a78bfa", "#06b6d4", "#84cc16"]
@@ -189,8 +232,25 @@ export function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [agg, setAgg] = useState<AggregateData | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
+  const [period, setPeriod] = useState<Period>("week")
+  const [periodLoading, setPeriodLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const fetchAnalytics = useCallback(async (signal: AbortSignal) => {
+    const url = await window.electronAPI.invoke("get-mcp-url")
+    if (!url) { setError("MCP server URL not available"); return }
+    const anRes = await fetch(`${url}/tools/call`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tool: "cm_analytics", args: { period } }),
+      signal,
+    })
+    if (anRes.ok) {
+      const anData = await anRes.json()
+      setAnalytics(anData.result || null)
+    }
+  }, [period])
 
   const fetchAll = useCallback(async () => {
     const abort = new AbortController()
@@ -209,20 +269,12 @@ export function ProjectsPage() {
       if (pData.error) { setError(typeof pData.error === "string" ? pData.error : pData.error.message || JSON.stringify(pData.error)); setLoading(false); return }
       const list = (pData.result || pData.projects || []) as Project[]
       setProjects(list.map(p => ({ ...p, chunks: p.chunks || 0, files: p.files || 0, edges: 0, measuredSavings: 0, searches: 0, efficiencyRatio: 0 })))
-      const [aRes, anRes] = await Promise.all([
-        fetch(`${url}/tools/call`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tool: "cm_aggregate", args: {} }),
-          signal: abort.signal,
-        }),
-        fetch(`${url}/tools/call`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tool: "cm_analytics", args: {} }),
-          signal: abort.signal,
-        }),
-      ])
+      const aRes = await fetch(`${url}/tools/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: "cm_aggregate", args: {} }),
+        signal: abort.signal,
+      })
       const top5 = list.slice(0, 5)
       const enrichedTop = await Promise.all(top5.map(async (p) => {
         try {
@@ -244,10 +296,6 @@ export function ProjectsPage() {
         const aData = await aRes.json()
         setAgg(aData.result || aData.aggregate || null)
       }
-      if (anRes.ok) {
-        const anData = await anRes.json()
-        setAnalytics(anData.result || null)
-      }
       setError(null)
     } catch (e: any) {
       if (e?.name === "AbortError") setError("Request timed out (10s)")
@@ -264,6 +312,16 @@ export function ProjectsPage() {
     window.addEventListener("cm-data", handler)
     return () => window.removeEventListener("cm-data", handler)
   }, [fetchAll])
+
+  useEffect(() => {
+    const abort = new AbortController()
+    const timer = setTimeout(() => abort.abort(), 10_000)
+    setPeriodLoading(true)
+    fetchAnalytics(abort.signal)
+      .catch(() => {})
+      .finally(() => setPeriodLoading(false))
+    return () => { clearTimeout(timer); abort.abort() }
+  }, [period])
 
   const forgetProject = useCallback(async (id: string) => {
     try {
@@ -307,20 +365,20 @@ export function ProjectsPage() {
     : 0
   const hasUsageData = totalSavings > 0 || avgEfficiency > 0
 
-  const activity24h = analytics?.activityTimeline.reduce((s, b) => s + b.count, 0) || 0
+  const activityInPeriod = analytics?.activityTimeline.reduce((s, b) => s + b.count, 0) || 0
+  const savedInPeriod = analytics?.activityTimeline.reduce((s, b) => s + b.saved, 0) || 0
+  const granularity = analytics?.granularity
 
-  const cumulativeChartData = (analytics?.cumulativeSavings || []).map((p, i, arr) => {
-    const d = new Date(p.ts)
-    return {
-      time: i === 0 || i === arr.length - 1 || i % Math.max(1, Math.floor(arr.length / 6)) === 0
-        ? `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`
-        : "",
-      Tokens: p.total,
+  const savingsByBucket = (analytics?.activityTimeline || []).map((b) => {
+    const bucket: Record<string, any> = { bucket: formatBucketLabel(b.hour, granularity) }
+    for (const m of Object.keys(b.byMechanism || {}) as Mechanism[]) {
+      bucket[m] = b.byMechanism[m] || 0
     }
+    return bucket
   })
 
   const activityChartData = (analytics?.activityTimeline || []).map(b => ({
-    hour: b.hour.slice(11) + "h",
+    hour: formatBucketLabel(b.hour, granularity),
     Events: b.count,
   }))
 
@@ -375,8 +433,8 @@ export function ProjectsPage() {
               Icon={Zap}
             />
             <HeroMetric
-              value={fmt(activity24h)}
-              label="Events (24h)"
+              value={fmt(activityInPeriod)}
+              label={`Eventos (${PERIOD_LABELS[period]})`}
               accent="from-green-600/40 to-green-900/40"
               Icon={BarChart3}
             />
@@ -396,8 +454,8 @@ export function ProjectsPage() {
         ) : (
           <>
             <HeroMetric
-              value={fmt(activity24h)}
-              label="Events (24h)"
+              value={fmt(activityInPeriod)}
+              label={`Eventos (${PERIOD_LABELS[period]})`}
               accent="from-green-600/40 to-green-900/40"
               Icon={BarChart3}
             />
@@ -417,53 +475,74 @@ export function ProjectsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card title="Cumulative tokens saved (24h)">
-          {cumulativeChartData.length > 1 && (cumulativeChartData[cumulativeChartData.length - 1].Tokens || 0) > 0 ? (
-            <div className="h-56">
+        <Card
+          title={`Ahorros por mecanismo (${PERIOD_LABELS[period]})`}
+          action={<PeriodSwitcher value={period} onChange={setPeriod} />}
+        >
+          <div className="relative h-56">
+            {savedInPeriod > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={cumulativeChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#22c55e" stopOpacity={0.6} />
-                      <stop offset="100%" stopColor="#22c55e" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
+                <BarChart data={savingsByBucket} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="time" tick={{ fill: "#8b92a8", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "#8b92a8", fontSize: 10 }} />
-                  <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #1f2937", borderRadius: 8 }} formatter={(v: any) => fmtK(v as number)} />
-                  <Area type="monotone" dataKey="Tokens" stroke="#22c55e" fill="url(#cumGrad)" strokeWidth={2.5} />
-                </AreaChart>
+                  <XAxis dataKey="bucket" tick={{ fill: "#8b92a8", fontSize: 10 }} interval={Math.max(0, Math.floor(savingsByBucket.length / 8) - 1)} />
+                  <YAxis tick={{ fill: "#8b92a8", fontSize: 10 }} tickFormatter={(v) => fmtK(v as number)} />
+                  <Tooltip
+                    contentStyle={{ background: "#0f172a", border: "1px solid #1f2937", borderRadius: 8 }}
+                    formatter={(v: any, name: any) => [fmtK(v as number), MECHANISM_LABELS[name as Mechanism] || name]}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: 10, color: "#8b92a8" }}
+                    formatter={(v) => MECHANISM_LABELS[v as Mechanism] || v}
+                    iconType="circle"
+                    iconSize={8}
+                  />
+                  {(Object.keys(MECHANISM_COLORS) as Mechanism[]).map((m) => (
+                    <Bar key={m} dataKey={m} stackId="savings" fill={MECHANISM_COLORS[m]} />
+                  ))}
+                </BarChart>
               </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-56 flex flex-col items-center justify-center text-center">
-              <TrendingUp size={36} className="text-muted/40 mb-2" />
-              <p className="text-muted text-sm">No savings recorded yet</p>
-              <p className="text-muted/60 text-xs mt-1">Use <code className="text-accent">context_search</code> or any tool — savings accumulate automatically</p>
-            </div>
-          )}
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center">
+                <TrendingUp size={36} className="text-muted/40 mb-2" />
+                <p className="text-muted text-sm">No savings recorded yet</p>
+                <p className="text-muted/60 text-xs mt-1">Use <code className="text-accent">context_search</code> or any tool — savings accumulate automatically</p>
+              </div>
+            )}
+            {periodLoading ? (
+              <div className="absolute inset-0 bg-panel/60 backdrop-blur-[1px] flex items-center justify-center rounded-lg transition-opacity">
+                <Spinner size={18} />
+              </div>
+            ) : null}
+          </div>
         </Card>
 
-        <Card title="Hourly activity (24h)">
-          {activityChartData.some(d => d.Events > 0) ? (
-            <div className="h-56">
+        <Card
+          title={`Actividad por ${granularity === "hour" ? "hora" : granularity === "day" ? "día" : granularity === "month" ? "día" : "mes"} (${PERIOD_LABELS[period]})`}
+          action={<PeriodSwitcher value={period} onChange={setPeriod} />}
+        >
+          <div className="relative h-56">
+            {activityChartData.some(d => d.Events > 0) ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={activityChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="hour" tick={{ fill: "#8b92a8", fontSize: 10 }} interval={2} />
+                  <XAxis dataKey="hour" tick={{ fill: "#8b92a8", fontSize: 10 }} interval={Math.max(0, Math.floor(activityChartData.length / 8) - 1)} />
                   <YAxis tick={{ fill: "#8b92a8", fontSize: 10 }} allowDecimals={false} />
                   <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #1f2937", borderRadius: 8 }} />
                   <Bar dataKey="Events" fill="#3b82f6" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-56 flex flex-col items-center justify-center text-center">
-              <Clock size={36} className="text-muted/40 mb-2" />
-              <p className="text-muted text-sm">No activity in the last 24 hours</p>
-            </div>
-          )}
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center">
+                <Clock size={36} className="text-muted/40 mb-2" />
+                <p className="text-muted text-sm">No activity in {PERIOD_LABELS[period].toLowerCase()}</p>
+              </div>
+            )}
+            {periodLoading ? (
+              <div className="absolute inset-0 bg-panel/60 backdrop-blur-[1px] flex items-center justify-center rounded-lg transition-opacity">
+                <Spinner size={18} />
+              </div>
+            ) : null}
+          </div>
         </Card>
       </div>
 

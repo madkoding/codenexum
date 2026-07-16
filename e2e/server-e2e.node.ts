@@ -157,13 +157,38 @@ test("cm_aggregate returns byType, byLang, topFiles", async () => {
   assert.ok(Array.isArray(data.result.topFiles))
 })
 
-test("cm_analytics returns global analytics", async () => {
+test("cm_analytics returns global analytics (default week)", async () => {
   const { data } = await rpc("cm_analytics", {})
   assert.ok(data.result.activityTimeline)
-  assert.equal(data.result.activityTimeline.length, 24)
+  assert.equal(data.result.activityTimeline.length, 7)
+  assert.equal(data.result.period, "week")
+  assert.equal(data.result.granularity, "day")
   assert.ok(data.result.recentActivity)
   assert.ok(data.result.indexHealth)
   assert.ok(data.result.globalTotals)
+})
+
+test("cm_analytics day period returns 24 hourly buckets with byMechanism", async () => {
+  const { data } = await rpc("cm_analytics", { period: "day" })
+  assert.equal(data.result.activityTimeline.length, 24)
+  assert.equal(data.result.granularity, "hour")
+  const bucket = data.result.activityTimeline[0]
+  assert.ok(bucket.byMechanism)
+  assert.equal(typeof bucket.byMechanism.indexSubstitution, "number")
+  assert.equal(typeof bucket.byMechanism.searchSnippets, "number")
+  assert.equal(typeof bucket.byMechanism.compression, "number")
+})
+
+test("cm_analytics month period returns 30 daily buckets", async () => {
+  const { data } = await rpc("cm_analytics", { period: "month" })
+  assert.equal(data.result.activityTimeline.length, 30)
+  assert.equal(data.result.granularity, "day")
+})
+
+test("cm_analytics year period returns 12 monthly buckets", async () => {
+  const { data } = await rpc("cm_analytics", { period: "year" })
+  assert.equal(data.result.activityTimeline.length, 12)
+  assert.equal(data.result.granularity, "month")
 })
 
 test("cm_dashboard returns state", async () => {

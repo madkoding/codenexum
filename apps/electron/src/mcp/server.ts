@@ -31,7 +31,7 @@ const TOOLS = [
   { name: "cm_aggregate", description: "Aggregate stats by type/language", inputSchema: { type: "object", properties: { path: { type: "string" }, projectDir: { type: "string" } } } },
   { name: "cm_compression", description: "Show compression status", inputSchema: { type: "object", properties: {} } },
   { name: "cm_dashboard", description: "Get dashboard state", inputSchema: { type: "object", properties: {} } },
-  { name: "cm_analytics", description: "Get global analytics: activity timeline, top queries, recent activity, index health, hot files", inputSchema: { type: "object", properties: {} } },
+  { name: "cm_analytics", description: "Get global analytics: activity timeline, top queries, recent activity, index health, hot files. period: year|month|week(day) — default week.", inputSchema: { type: "object", properties: { period: { type: "string", enum: ["year", "month", "week", "day"], description: "Time period for activity timeline and cumulative savings. Default: week." } } } },
   { name: "cm_analyze", description: "Index/analyze a project path", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
   { name: "cm_discover", description: "Scan the parent directory of a project for sibling projects and auto-index them", inputSchema: { type: "object", properties: { path: { type: "string" }, projectDir: { type: "string" } }, required: ["path"] } },
   { name: "cm_search", description: "Search indexed code by keyword. Requires path to the project directory.", inputSchema: { type: "object", properties: { path: { type: "string", description: "Project directory path" }, projectDir: { type: "string", description: "Alias for path" }, query: { type: "string" }, n: { type: "number" } }, required: ["path"] } },
@@ -291,10 +291,12 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
       }
 
       case "cm_analytics": {
-        const cached = cacheGet<any>("analytics")
+        const period = typeof args?.period === "string" ? args.period : "week"
+        const cacheKey = `analytics:${period}`
+        const cached = cacheGet<any>(cacheKey)
         if (cached) return { result: cached }
-        const result = getGlobalAnalytics()
-        cacheSet("analytics", result, CACHE_TTL_LONG_MS)
+        const result = getGlobalAnalytics(period)
+        cacheSet(cacheKey, result, 5_000)
         return { result }
       }
 
