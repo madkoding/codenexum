@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/plugin",
-  "version": "0.99.9",
+  "version": "0.99.10",
   "description": "opencode plugin — thin MCP client to the CodeNexum Electron app",
   "type": "module",
   "main": "./index.js",

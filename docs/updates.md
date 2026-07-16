@@ -47,12 +47,12 @@ The CI workflow is optional. Releases are uploaded to GitHub manually with `gh`:
 
 ```bash
 # 1. Bump version
-$EDITOR packages/core/src/version.ts  # APP_VERSION = "0.99.9"
+$EDITOR packages/core/src/version.ts  # APP_VERSION = "0.99.10"
 
 # 2. Commit + tag
 git add packages/core/src/version.ts
-git commit -m "release: v0.99.9"
-git tag v0.99.9
+git commit -m "release: v0.99.10"
+git tag v0.99.10
 git push origin develop --follow-tags
 
 # 3. Build
@@ -62,24 +62,24 @@ bun run --filter @codenexum/plugin bundle
 bun run --filter @codenexum/electron package
 
 # 4. Upload to GitHub
-gh release create v0.99.9 \
-  --title "v0.99.9" \
+gh release create v0.99.10 \
+  --title "v0.99.10" \
   --generate-notes \
   apps/electron/out/*
 ```
 
 `apps/electron/out/` will contain (per platform):
 
-- `CodeNexum-0.99.9`, `CodeNexum-0.99.9`, `latest-mac.yml`
+- `CodeNexum-0.99.10`, `CodeNexum-0.99.10`, `latest-mac.yml`
 - `CodeNexum-Setup.exe`, `latest.yml` (nsis)
-- `CodeNexum-0.99.9` (no feed entry — by design)
-- `CodeNexum-0.99.9`, `CodeNexum-0.99.9`, `latest-linux.yml`
+- `CodeNexum-0.99.10` (no feed entry — by design)
+- `CodeNexum-0.99.10`, `CodeNexum-0.99.10`, `latest-linux.yml`
 
 `gh release create` uploads everything in the glob. Electron-builder generated the `latest*.yml` files during `package` — no extra step.
 
 ### Marking the release as latest
 
-`gh release create` marks the release as "Latest" by default. Prereleases (e.g. `v0.99.9`) are tagged with `--prerelease` and won't trigger auto-update for stable users.
+`gh release create` marks the release as "Latest" by default. Prereleases (e.g. `v0.99.10`) are tagged with `--prerelease` and won't trigger auto-update for stable users.
 
 ## Smoke test
 
@@ -87,17 +87,17 @@ Before tagging a real release, validate the feed manually:
 
 1. Build a candidate locally and push it to a draft release:
    ```bash
-   gh release create v0.99.9 --prerelease --draft apps/electron/out/*
+   gh release create v0.99.10 --prerelease --draft apps/electron/out/*
    ```
-2. Install a previous stable build (e.g. v0.99.9) on a test machine. Launch it with:
+2. Install a previous stable build (e.g. v0.99.10) on a test machine. Launch it with:
    ```bash
-   CODENEXUM_UPDATE_FEED_URL=https://github.com/madKoding/codenexum/releases/expanded_assets/v0.99.9 \
+   CODENEXUM_UPDATE_FEED_URL=https://github.com/madKoding/codenexum/releases/expanded_assets/v0.99.10 \
      /Applications/CodeNexum.app/Contents/MacOS/CodeNexum
    ```
    (electron-updater does not consume this URL shape directly — see workaround below.)
-3. To force a feed override, publish the candidate as a non-prerelease tag (e.g. `v0.99.9`) and use:
+3. To force a feed override, publish the candidate as a non-prerelease tag (e.g. `v0.99.10`) and use:
    ```bash
-   CODENEXUM_UPDATE_FEED_URL='{"provider":"generic","url":"https://github.com/madKoding/codenexum/releases/download/v0.99.9"}' \
+   CODENEXUM_UPDATE_FEED_URL='{"provider":"generic","url":"https://github.com/madKoding/codenexum/releases/download/v0.99.10"}' \
      /Applications/CodeNexum.app/Contents/MacOS/CodeNexum
    ```
    (pass JSON in the env var; `UpdateManager` reads it as the `setFeedURL` arg — note: the current implementation passes the env as a string URL only; this requires a small adjustment if you need a JSON feed URL — see "Test feed override" below).
@@ -122,7 +122,7 @@ CODENEXUM_UPDATE_FEED_URL=http://127.0.0.1:8080/ \
 
 ## Rollback
 
-There is no native rollback. To revert a bad release, publish a hotfix version (e.g. `v0.99.9`) and yank the previous release's assets on GitHub (or mark as draft). Users on the bad version will receive the hotfix on next check.
+There is no native rollback. To revert a bad release, publish a hotfix version (e.g. `v0.99.10`) and yank the previous release's assets on GitHub (or mark as draft). Users on the bad version will receive the hotfix on next check.
 
 ## Known caveats
 
