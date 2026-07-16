@@ -4,18 +4,19 @@ import { ensureProject } from "./auto-register.js"
 import { getRegistryPath } from "./db-paths.js"
 import { getUsageSummary } from "./usage.js"
 import { getSemanticCompressionSaved } from "./compress.js"
+import type { CountRow, SumRow, MetaRow, DbPathRow, PathRow, ProjectListRow, ProjectRow } from "@codenexum/sql"
 
 function getDbPathForProject(projectDir: string): string | null {
   ensureProject(projectDir)
   const reg = new DatabaseSync(getRegistryPath())
-  const row = reg.prepare("SELECT dbPath FROM projects WHERE path = ?").get(projectDir) as any
+  const row = reg.prepare("SELECT dbPath FROM projects WHERE path = ?").get(projectDir) as DbPathRow | undefined
   reg.close()
   return row?.dbPath || null
 }
 
 function getDefaultDbPath(): string | null {
   const reg = new DatabaseSync(getRegistryPath())
-  const row = reg.prepare("SELECT dbPath FROM projects ORDER BY lastSeen DESC LIMIT 1").get() as any
+  const row = reg.prepare("SELECT dbPath FROM projects ORDER BY lastSeen DESC LIMIT 1").get() as DbPathRow | undefined
   reg.close()
   return row?.dbPath || null
 }
@@ -29,10 +30,10 @@ export function getProjectStats(projectDir?: string) {
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
   const tableNames = new Set(tables.map(t => t.name))
   if (!tableNames.has("chunks_fts") || !tableNames.has("file_hashes")) { db.close(); return emptyStats() }
-  const chunks = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
-  const files = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
-  const edges = (db.prepare("SELECT count(*) as c FROM edges").get() as any).c
-  const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as any)?.value || null
+  const chunks = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as CountRow | undefined)?.c ?? 0
+  const files = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as CountRow | undefined)?.c ?? 0
+  const edges = (db.prepare("SELECT count(*) as c FROM edges").get() as CountRow | undefined)?.c ?? 0
+  const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as MetaRow | undefined)?.value || null
   const topFiles = (db.prepare("SELECT file, count(*) as c FROM chunks_fts GROUP BY file ORDER BY c DESC LIMIT 10").all() as { file: string; c: number }[]).map(f => ({ path: f.file, count: f.c }))
   const languages = (db.prepare("SELECT lang, count(*) as c FROM chunks_fts GROUP BY lang ORDER BY c DESC").all() as { lang: string; c: number }[]).map(l => ({ name: l.lang, count: l.c }))
   db.close()
@@ -75,7 +76,7 @@ function emptyUsage() {
 
 function resolveDirFromDbPath(dbPath: string): string | null {
   const reg = new DatabaseSync(getRegistryPath())
-  const row = reg.prepare("SELECT path FROM projects WHERE dbPath = ?").get(dbPath) as any
+  const row = reg.prepare("SELECT path FROM projects WHERE dbPath = ?").get(dbPath) as PathRow | undefined
   reg.close()
   return row?.path || null
 }
@@ -113,7 +114,7 @@ export function getDashboardState() {
   const regPath = getRegistryPath()
   if (!existsSync(regPath)) return { projects: [], global: { totalChunks: 0, totalFiles: 0 }, compression: getCompressionStatus() }
   const db = new DatabaseSync(regPath)
-  const projects = (db.prepare("SELECT id, path, name, dbPath, lastSeen FROM projects ORDER BY lastSeen DESC").all() as any[]).map(p => ({
+  const projects = (db.prepare("SELECT id, path, name, dbPath, lastSeen FROM projects ORDER BY lastSeen DESC").all() as unknown as ProjectRow[]).map(p => ({
     id: p.id, path: p.path, name: p.name, dbPath: p.dbPath, lastSeen: p.lastSeen,
   }))
   db.close()
@@ -125,15 +126,15 @@ export function getDashboardState() {
         const tables = pdb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
         const tableSet = new Set(tables.map(t => t.name))
         if (tableSet.has("chunks_fts")) {
-          totalChunks += (pdb.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
+          totalChunks += (pdb.prepare("SELECT count(*) as c FROM chunks_fts").get() as CountRow | undefined)?.c ?? 0
         }
         if (tableSet.has("file_hashes")) {
-          totalFiles += (pdb.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
+          totalFiles += (pdb.prepare("SELECT count(*) as c FROM file_hashes").get() as CountRow | undefined)?.c ?? 0
         }
         if (tableSet.has("usage_events")) {
-          const r = pdb.prepare("SELECT COALESCE(SUM(tokens_saved), 0) as s, COUNT(*) as c FROM usage_events").get() as any
-          totalSavedTokens += r.s || 0
-          totalEvents += r.c || 0
+          const r = pdb.prepare("SELECT COALESCE(SUM(tokens_saved), 0) as s, COUNT(*) as c FROM usage_events").get() as SumRow | undefined
+          totalSavedTokens += r?.s || 0
+          totalEvents += r?.c || 0
         }
         pdb.close()
       } catch {}
@@ -157,7 +158,7 @@ function listRegisteredProjects(): { id: string; name: string; path: string; dbP
   const regPath = getRegistryPath()
   if (!existsSync(regPath)) return []
   const reg = new DatabaseSync(regPath)
-  const rows = reg.prepare("SELECT id, name, path, dbPath FROM projects ORDER BY lastSeen DESC").all() as any[]
+  const rows = reg.prepare("SELECT id, name, path, dbPath FROM projects ORDER BY lastSeen DESC").all() as unknown as ProjectListRow[]
   reg.close()
   return rows
 }
@@ -228,9 +229,9 @@ export function getGlobalAnalytics() {
 
     if (tableSet.has("chunks_fts")) {
       try {
-        const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as any)?.value || null
-        const c = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
-        const f = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
+        const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as MetaRow | undefined)?.value || null
+        const c = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as CountRow | undefined)?.c ?? 0
+        const f = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as CountRow | undefined)?.c ?? 0
         let zeroChunkFiles = 0
         try {
           // Use files_indexed (PK on file) for O(log n) membership check.
@@ -241,7 +242,7 @@ export function getGlobalAnalytics() {
               SELECT count(*) as c FROM file_hashes fh
               LEFT JOIN files_indexed fi ON fi.file = fh.file
               WHERE fi.file IS NULL
-            `).get() as any).c
+            `).get() as CountRow | undefined)?.c ?? 0
           } else {
             zeroChunkFiles = (db.prepare(`
               SELECT count(*) as c FROM file_hashes fh
@@ -249,7 +250,7 @@ export function getGlobalAnalytics() {
                 SELECT DISTINCT file FROM chunks_fts
               ) cf ON cf.file = fh.file
               WHERE cf.file IS NULL
-            `).get() as any).c
+            `).get() as CountRow | undefined)?.c ?? 0
           }
         } catch {}
         indexHealth.push({ id: proj.id, name: proj.name, path: proj.path, lastIndexed, chunks: c, files: f, zeroChunkFiles })

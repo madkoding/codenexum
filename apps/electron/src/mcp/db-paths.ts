@@ -3,14 +3,19 @@ import { join } from "path"
 import { existsSync, mkdirSync } from "fs"
 import { createHash } from "crypto"
 
+function resolveUserData(): string {
+  if (process.env.CODENEXUM_USER_DATA) return process.env.CODENEXUM_USER_DATA
+  try { return app.getPath("userData") } catch { return process.cwd() }
+}
+
 export function getUserDataDir(): string {
-  const dir = join(app.getPath("userData"), "projects")
+  const dir = join(resolveUserData(), "projects")
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return dir
 }
 
 export function getRegistryPath(): string {
-  return join(app.getPath("userData"), "registry.sqlite")
+  return join(resolveUserData(), "registry.sqlite")
 }
 
 export function getProjectDbPath(projectPath: string): string {

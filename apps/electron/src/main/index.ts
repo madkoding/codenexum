@@ -8,11 +8,14 @@ import { getAppIcon, getTrayIcon } from "./icon.js"
 import { UpdateManager } from "./updater.js"
 import { APP_NAME, APP_VERSION } from "@codenexum/core"
 import { getSettings } from "../mcp/settings.js"
+import { createLogger } from "../mcp/logger.js"
 import {
   installOpencodePlugin,
   updateMcpConfig,
   writeMcpConfigFile,
 } from "./plugin-install.js"
+
+const log = createLogger("main")
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -51,7 +54,7 @@ function cleanOldDatabases() {
   for (const f of files) {
     try { rmSync(join(oldCache, f)) } catch {}
   }
-  console.log(`[codenexum] Cleaned ${files.length} old v2 database(s)`)
+  log.info("cleaned old v2 databases", { count: files.length })
 }
 
 function isOpencodeProcessRunning(): boolean {
@@ -125,7 +128,7 @@ function createTray() {
   const size: 16 | 32 | 64 = process.platform === "darwin" ? 16 : process.platform === "linux" ? 32 : 32
   const icon = getTrayIcon(size)
   if (icon.isEmpty()) {
-    console.warn(`[codenexum] Tray icon not found — tray disabled`)
+    log.warn("tray icon not found — tray disabled")
     return
   }
   tray = new Tray(icon)
@@ -197,6 +200,15 @@ app.whenReady().then(async () => {
   ipcMain.handle("settings:get", () => getSettings())
   ipcMain.handle("settings:reload-close-behavior", () => { applyCloseBehavior() })
 
+  ipcMain.handle("shell:open-path", (_e, p: string) => {
+    if (typeof p !== "string" || !p) return false
+    try { require("electron").shell.openPath(p); return true } catch { return false }
+  })
+  ipcMain.handle("shell:show-in-folder", (_e, p: string) => {
+    if (typeof p !== "string" || !p) return false
+    try { require("electron").shell.showItemInFolder(p); return true } catch { return false }
+  })
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -234,7 +246,7 @@ app.whenReady().then(async () => {
         { mcpPort: actualPort, opencodeAlreadyRunning: opencodeWasRunning },
       )
     } catch (e) {
-      console.error(`[codenexum] plugin install crashed:`, e)
+      log.error("plugin install crashed", { error: (e as Error)?.message || String(e) })
     }
   })
 })

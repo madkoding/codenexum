@@ -196,16 +196,21 @@ flowchart LR
 
     subgraph APPS[apps/]
         EL["@codenexum/electron<br/>main + MCP + dashboard"]
-        PL["@codenexum/plugin<br/>~120 LOC MCP client"]
+        PL["@codenexum/plugin<br/>~720 LOC MCP client"]
+        CL["@codenexum/claude-plugin<br/>Claude Code hook"]
     end
 
     EL --> CORE
     EL --> SQL
     EL --> PL
     SQL --> CORE
+    PL --> EL
+    CL --> EL
 ```
 
 Stack: **strict TypeScript**, **Electron 43**, **React 19**, **Tailwind**, **node:sqlite**, **recharts**.
+
+A second client, `@codenexum/claude-plugin`, is a thin hook for [Claude Code](https://claude.com/claude-code) that proxies to the same MCP server (with a hard-coded denylist for sensitive paths and an audit log). See `apps/claude-plugin/README.md`.
 
 ---
 

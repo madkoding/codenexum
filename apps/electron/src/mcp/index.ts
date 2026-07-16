@@ -5,3 +5,4 @@ export function startContextManagerMcp(port?: number) {
 }
 
 export { startMcpServer as McpServer } from "./server.js"
+export { discoverAndIndex } from "./auto-discover.js"

@@ -137,40 +137,51 @@ function SavingsMechanismChart({ data }: { data: { key: string; label: string; v
   )
 }
 
-function ProjectHealthCard({ name, files, chunks, zeroChunkFiles, lastIndexed, href, accent }: { name: string; files: number; chunks: number; zeroChunkFiles: number; lastIndexed: string | null; href: string; accent: string }) {
+function ProjectHealthCard({ name, files, chunks, zeroChunkFiles, lastIndexed, href, accent, onForget }: { name: string; files: number; chunks: number; zeroChunkFiles: number; lastIndexed: string | null; href: string; accent: string; onForget?: () => void }) {
   const lastTs = lastIndexed ? new Date(lastIndexed).getTime() : 0
   const ageHours = lastTs ? (Date.now() - lastTs) / (1000 * 60 * 60) : Infinity
   const freshness = ageHours < 1 ? 1 : ageHours < 24 ? 0.8 : ageHours < 168 ? 0.5 : 0.2
   const indexedFiles = Math.max(0, files - zeroChunkFiles)
   return (
-    <Link
-      to={href}
-      className="group flex flex-col bg-panel border border-gray-800 rounded-xl p-3.5 hover:border-accent/50 transition-colors min-w-0 overflow-hidden h-full"
-    >
-      <div className="flex items-start gap-2 mb-3 min-w-0">
-        <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ background: accent }} />
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold truncate text-sm" title={name}>{name}</div>
-          <div className="text-[11px] text-muted mt-0.5 truncate">
-            {lastIndexed ? `Updated ${relTime(lastIndexed)}` : "Never indexed"}
+    <div className="group relative flex flex-col bg-panel border border-gray-800 rounded-xl p-3.5 hover:border-accent/50 transition-colors min-w-0 overflow-hidden h-full">
+      <Link
+        to={href}
+        className="flex flex-col flex-1 min-w-0"
+      >
+        <div className="flex items-start gap-2 mb-3 min-w-0">
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ background: accent }} />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold truncate text-sm" title={name}>{name}</div>
+            <div className="text-[11px] text-muted mt-0.5 truncate">
+              {lastIndexed ? `Updated ${relTime(lastIndexed)}` : "Never indexed"}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-1 mb-3 min-w-0">
-        <MiniRing value={indexedFiles} max={files || 1} label="Indexed" color={accent} />
-        <MiniRing value={freshness} max={1} label="Fresh" color="#22c55e" />
-      </div>
-      <div className="mt-auto pt-2 border-t border-gray-800/60 grid grid-cols-2 gap-2 min-w-0">
-        <div className="text-center min-w-0">
-          <div className="text-sm font-bold tabular-nums truncate" title={fmtK(chunks)}>{fmtK(chunks)}</div>
-          <div className="text-[10px] text-muted truncate">chunks</div>
+        <div className="grid grid-cols-2 gap-1 mb-3 min-w-0">
+          <MiniRing value={indexedFiles} max={files || 1} label="Indexed" color={accent} />
+          <MiniRing value={freshness} max={1} label="Fresh" color="#22c55e" />
         </div>
-        <div className="text-center min-w-0">
-          <div className="text-sm font-bold tabular-nums truncate" title={fmt(files)}>{fmt(files)}</div>
-          <div className="text-[10px] text-muted truncate">files</div>
+        <div className="mt-auto pt-2 border-t border-gray-800/60 grid grid-cols-2 gap-2 min-w-0">
+          <div className="text-center min-w-0">
+            <div className="text-sm font-bold tabular-nums truncate" title={fmtK(chunks)}>{fmtK(chunks)}</div>
+            <div className="text-[10px] text-muted truncate">chunks</div>
+          </div>
+          <div className="text-center min-w-0">
+            <div className="text-sm font-bold tabular-nums truncate" title={fmt(files)}>{fmt(files)}</div>
+            <div className="text-[10px] text-muted truncate">files</div>
+          </div>
         </div>
-      </div>
-    </Link>
+      </Link>
+      {onForget ? (
+        <button
+          onClick={(e) => { e.preventDefault(); if (confirm(`Forget project "${name}"? This removes its index and DB.`)) onForget() }}
+          className="absolute top-2 right-2 p-1 rounded text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition-all"
+          title="Forget this project"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      ) : null}
+    </div>
   )
 }
 
@@ -252,6 +263,18 @@ export function ProjectsPage() {
     const handler = () => fetchAll()
     window.addEventListener("cm-data", handler)
     return () => window.removeEventListener("cm-data", handler)
+  }, [fetchAll])
+
+  const forgetProject = useCallback(async (id: string) => {
+    try {
+      const url = await window.electronAPI.invoke("get-mcp-url")
+      await fetch(`${url}/tools/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: "cm_projects_delete", args: { id } }),
+      })
+      fetchAll()
+    } catch {}
   }, [fetchAll])
 
   if (loading) {
@@ -492,6 +515,7 @@ export function ProjectsPage() {
                 lastIndexed={h.lastIndexed}
                 href={`#/project/${h.id}`}
                 accent={projectAccents[i % projectAccents.length]}
+                onForget={() => forgetProject(h.id)}
               />
             ))}
           </div>

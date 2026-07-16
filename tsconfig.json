@@ -22,5 +22,6 @@
       "@codenexum/electron/*": ["./apps/electron/src/*"]
     }
   },
-  "include": ["packages/*/src/**/*", "apps/*/src/**/*"]
+  "include": ["packages/*/src/**/*", "apps/*/src/**/*"],
+  "exclude": ["apps/electron/test-e2e/**/*", "**/dist/**/*", "**/node_modules/**/*"]
 }

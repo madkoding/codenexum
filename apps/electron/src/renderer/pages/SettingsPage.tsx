@@ -18,6 +18,7 @@ interface AppSettings {
   capBodyLines: boolean
   persistentCache: boolean
   closeToTray: boolean
+  autoDiscover: boolean
   compressThreshold: number
   cacheTtlMs: number
   cacheMaxEntries: number
@@ -36,6 +37,7 @@ const DEFAULTS: AppSettings = {
   capBodyLines: true,
   persistentCache: true,
   closeToTray: false,
+  autoDiscover: true,
   compressThreshold: 8000,
   cacheTtlMs: 5 * 60 * 1000,
   cacheMaxEntries: 200,
@@ -126,6 +128,13 @@ const TOGGLES: ToggleDef[] = [
     description: "Log a `turn_savings` event at the end of each session.idle with the cumulative token savings, visible in the dashboard.",
     Icon: Zap,
     category: "telemetry",
+  },
+  {
+    key: "autoDiscover",
+    label: "Auto-discover sibling projects",
+    description: "When indexing a project, also scan its parent directory and index any sibling projects (heuristic via .git / package.json / Cargo.toml / etc.). Disable if you only want to track the project you explicitly point at.",
+    Icon: Search,
+    category: "intercept",
   },
   {
     key: "closeToTray",

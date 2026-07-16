@@ -6,13 +6,15 @@ import { existsSync, rmSync } from "fs"
 import { DatabaseSync } from "node:sqlite"
 import { getDb, dropDb } from "./db-pool.js"
 import { indexProject, startWatching, stopWatching } from "./indexer.js"
-import { autoDiscoverAndIndex } from "./auto-discover.js"
+import { autoDiscoverAndIndex, discoverAndIndex } from "./auto-discover.js"
 import { initSchema, dbSetSchemaVersion, SCHEMA_VERSION, dbInsertChunks, dbInsertEdges, dbSetFileHash, dbSetMeta, dbSearch, dbFindRelated, dbFindImpacted, dbGetMeta, dbGetChunksForFile } from "@codenexum/sql"
-import { parseSymbolRef, charsToTokens, formatSearchResults, APP_VERSION } from "@codenexum/core"
+import { parseSymbolRef, charsToTokens, formatSearchResults, APP_VERSION, parseQuery } from "@codenexum/core"
+import { createLogger } from "./logger.js"
 import { logEvent } from "./usage.js"
 import { rawCacheGet, rawCacheSet } from "./cache.js"
 import { compressToolOutput, compressToolOutputSemantic, isCompressible } from "./compress.js"
 import { getSettings, updateSettings } from "./settings.js"
+import { sseAddClient, sseRemoveClient, sseWrite, sseBroadcast, sseGetClients, sseClientCount, type SseClient } from "./sse.js"
 
 const PORT = parseInt(process.env.CODENEXUM_MCP_PORT || "7770", 10)
 const MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -31,6 +33,7 @@ const TOOLS = [
   { name: "cm_dashboard", description: "Get dashboard state", inputSchema: { type: "object", properties: {} } },
   { name: "cm_analytics", description: "Get global analytics: activity timeline, top queries, recent activity, index health, hot files", inputSchema: { type: "object", properties: {} } },
   { name: "cm_analyze", description: "Index/analyze a project path", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+  { name: "cm_discover", description: "Scan the parent directory of a project for sibling projects and auto-index them", inputSchema: { type: "object", properties: { path: { type: "string" }, projectDir: { type: "string" } }, required: ["path"] } },
   { name: "cm_search", description: "Search indexed code by keyword. Requires path to the project directory.", inputSchema: { type: "object", properties: { path: { type: "string", description: "Project directory path" }, projectDir: { type: "string", description: "Alias for path" }, query: { type: "string" }, n: { type: "number" } }, required: ["path"] } },
   { name: "cm_related", description: "Find related symbols for a file:symbol reference. Requires path to the project directory.", inputSchema: { type: "object", properties: { path: { type: "string", description: "Project directory path" }, projectDir: { type: "string", description: "Alias for path" }, symbol: { type: "string", description: "Symbol reference like file.ts:name" }, n: { type: "number" } }, required: ["path", "symbol"] } },
   { name: "cm_impact", description: "Find files that depend on the given files. Requires path to the project directory.", inputSchema: { type: "object", properties: { path: { type: "string", description: "Project directory path" }, projectDir: { type: "string", description: "Alias for path" }, files: { type: "array", items: { type: "string" } } }, required: ["path", "files"] } },
@@ -41,9 +44,6 @@ const TOOLS = [
   { name: "cm_cache_put", description: "Cache a tool output", inputSchema: { type: "object", properties: { key: { type: "string" }, output: { type: "string" }, fileHash: { type: "string" } }, required: ["key", "output"] } },
   { name: "cm_compress_output", description: "Compress a tool output for the LLM. Tries semantic compression first (e.g. test summaries), falls back to line-truncation. Set semantic:false to skip semantic.", inputSchema: { type: "object", properties: { toolID: { type: "string" }, output: { type: "string" }, semantic: { type: "boolean", description: "If true (default), tries semantic compression first." } }, required: ["toolID", "output"] } },
 ]
-
-type SseClient = { id: string; res: ServerResponse }
-const sseClients = new Map<string, SseClient>()
 
 function json(res: ServerResponse, data: any, status = 200) {
   res.writeHead(status, { "Content-Type": "application/json" })
@@ -101,6 +101,8 @@ function readBody(req: IncomingMessage): Promise<any> {
   })
 }
 
+const log = createLogger("server")
+
 function getProjects() {
   const cached = cacheGet<any[]>("projects")
   if (cached) return cached
@@ -123,7 +125,7 @@ function getProjects() {
     for (const id of dead) {
       db.prepare("DELETE FROM projects WHERE id = ?").run(id)
     }
-    console.log(`[codenexum] Cleaned ${dead.length} stale/tmp project(s): ${dead.join(", ")}`)
+    log.info("cleaned stale/tmp projects", { count: dead.length, ids: dead.join(",") })
   }
   db.close()
   cacheSet("projects", active)
@@ -179,7 +181,8 @@ async function handleToolCall(req: IncomingMessage, res: ServerResponse) {
   try {
     const out = await executeToolCall(tool, args)
     if (out.error) return error(res, out.error, out.status ?? 400)
-    return json(res, { result: out.result })
+    const { result, ...extras } = out
+    return json(res, { result, ...extras })
   } catch (e: any) {
     return error(res, e.message || "internal error", 500)
   }
@@ -213,6 +216,7 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
           }
         }
         cacheInvalidate()
+        sseBroadcast("project", { type: "deleted", id: args?.id })
         return { result: { ok: true } }
       }
 
@@ -227,6 +231,7 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         reg.close()
         if (r.changes === 0) return { error: "project not found" }
         cacheInvalidate()
+        sseBroadcast("project", { type: "renamed", id, name })
         return { result: { ok: true, project: { id, name } } }
       }
 
@@ -302,7 +307,10 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         const start = Date.now()
         let files = 0, chunks: any[] = [], fileHashes: Record<string, string> = {}, edges: any[] = [], capped = false
         try {
-          const r = indexProject(path)
+          sseBroadcast("index-progress", { path, current: 0, total: 0, file: "" })
+          const r = indexProject(path, undefined, (current, total, file) => {
+            sseBroadcast("index-progress", { path, current, total, file })
+          })
           files = r.files; chunks = r.chunks; fileHashes = r.fileHashes; edges = r.edges; capped = r.capped
         } catch (e: any) {
           return { error: `indexer failed: ${e.message}` }
@@ -318,7 +326,24 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         updateProjectStats(path, totalChunks, totalFiles)
         startWatching(path, db)
         cacheInvalidate()
+        sseBroadcast("project", { type: "indexed", path, chunks: totalChunks, files: totalFiles, addedChunks: chunks.length, addedFiles: Object.keys(fileHashes).length })
+        if (getSettings().autoDiscover) {
+          discoverAndIndex(path)
+            .then(r => { if (r.indexed > 0) log.info("cm_analyze discovered sibling projects", { count: r.indexed }) })
+            .catch(e => log.warn("cm_analyze discover failed", { error: e?.message || String(e) }))
+        }
         return { result: { ok: true, path, chunks: totalChunks, files: totalFiles, addedChunks: chunks.length, addedFiles: Object.keys(fileHashes).length, elapsedMs: Date.now() - start, capped } }
+      }
+
+      case "cm_discover": {
+        const anchor = resolvePath(args)
+        if (!anchor) return { error: "missing path" }
+        try {
+          const r = await discoverAndIndex(anchor)
+          return { result: r }
+        } catch (e: any) {
+          return { error: `discover failed: ${e.message}` }
+        }
       }
 
       case "cm_search": {
@@ -326,8 +351,35 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         if (!projectDir) return { error: "missing path" }
         const dbPath = ensureProject(projectDir)
         const db = getDb(dbPath)
-        const results = dbSearch(db, args?.query || "", args?.n || 10)
-        logEvent(projectDir, "search", { meta: { query: args?.query, hits: results.length } })
+        try { initSchema(db) } catch {}
+        let n = Number(args?.n)
+        if (!Number.isFinite(n) || n <= 0) n = 10
+        if (n > 200) n = 200
+        const queryStr = args?.query || ""
+        const parsed = parseQuery(queryStr)
+        const searchTerms = parsed.terms.join(" ") || queryStr
+        let results = dbSearch(db, searchTerms, n * 4)
+        if (parsed.filters.type) {
+          results = results.filter((r: any) => r.type === parsed.filters.type)
+        }
+        if (parsed.filters.file) {
+          const f = parsed.filters.file
+          results = results.filter((r: any) => r.file.includes(f))
+        }
+        if (parsed.filters.lang) {
+          results = results.filter((r: any) => r.lang === parsed.filters.lang)
+        }
+        results = results.slice(0, n)
+        logEvent(projectDir, "search", { meta: { query: queryStr, hits: results.length } })
+        if (results.length === 0 && (!queryStr || queryStr.length < 2)) {
+          return { result: [], reason: "empty or too-short query" }
+        }
+        if (results.length === 0) {
+          try {
+            const has = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as { c: number }).c
+            if (has === 0) return { result: [], reason: "project not indexed — run cm_analyze" }
+          } catch {}
+        }
         return { result: results }
       }
       case "cm_related": {
@@ -422,7 +474,10 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         const projectRoot = (() => { try { return dbGetMeta(db, "projectRoot") } catch { return null } })() || projectDir
         let results: any[]
         try { results = dbSearch(db, query, 10) } catch { results = [] }
-        if (args?.fileFilter) results = results.filter(r => r.file.startsWith(args.fileFilter))
+        if (args?.fileFilter) {
+          const ff = args.fileFilter.startsWith("/") ? args.fileFilter : `${projectRoot}/${args.fileFilter}`
+          results = results.filter(r => r.file === ff || r.file.startsWith(ff + "/") || r.file.includes(args.fileFilter))
+        }
         if (results.length === 0) return { result: null }
         const formatted = formatSearchResults(results, projectRoot, { compact: true, snippetLines: 8 })
         const output = [`// index search: "${query}"`, formatted].join("\n")
@@ -434,8 +489,9 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
         if (entry) {
           const pDir = resolvePath(args)
           if (pDir) logEvent(pDir, "cache_hit", { tokensSaved: Math.max(0, charsToTokens(entry.output.length)), meta: { key: args?.key } })
+          return { result: entry.output }
         }
-        return { result: entry || null }
+        return { result: null }
       }
       case "cm_cache_put": {
         rawCacheSet(args?.key || "", args?.output || "", args?.fileHash)
@@ -470,24 +526,14 @@ async function executeToolCall(tool: string, args: any): Promise<Record<string, 
   }
 }
 
-function sseWrite(res: ServerResponse, event: string, data: any) {
-  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-}
-
-function sseBroadcast(event: string, data: any) {
-  for (const client of sseClients.values()) {
-    try { sseWrite(client.res, event, data) } catch {}
-  }
-}
-
 async function handleJsonRpc(req: IncomingMessage, res: ServerResponse, url: URL) {
   let body: any
   try { body = await readBody(req) } catch { return { error: "invalid JSON body" } }
   const { id, method, params } = body
   const reply = (result: any) => {
     const msg = { jsonrpc: "2.0", id, result }
-    if (url.searchParams.get("sse") === "1" && sseClients.size > 0) {
-      const last = Array.from(sseClients.values()).pop()!
+    if (url.searchParams.get("sse") === "1" && sseClientCount() > 0) {
+      const last = sseGetClients().pop()!
       sseWrite(last.res, "message", msg)
       res.writeHead(202, { "Content-Type": "application/json" })
       res.end(JSON.stringify({ accepted: true }))
@@ -497,8 +543,8 @@ async function handleJsonRpc(req: IncomingMessage, res: ServerResponse, url: URL
   }
   const fail = (code: number, message: string) => {
     const msg = { jsonrpc: "2.0", id, error: { code, message } }
-    if (url.searchParams.get("sse") === "1" && sseClients.size > 0) {
-      const last = Array.from(sseClients.values()).pop()!
+    if (url.searchParams.get("sse") === "1" && sseClientCount() > 0) {
+      const last = sseGetClients().pop()!
       sseWrite(last.res, "message", msg)
       res.writeHead(202, { "Content-Type": "application/json" })
       res.end(JSON.stringify({ accepted: true }))
@@ -544,8 +590,8 @@ function handleSse(req: IncomingMessage, res: ServerResponse, url: URL) {
   const clientId = Math.random().toString(36).slice(2)
   const msgPath = `/messages?sessionId=${clientId}`
   sseWrite(res, "endpoint", { url: msgPath })
-  sseClients.set(clientId, { id: clientId, res })
-  req.on("close", () => { sseClients.delete(clientId) })
+  sseAddClient({ id: clientId, res })
+  req.on("close", () => { sseRemoveClient(clientId) })
   const ka = setInterval(() => { try { res.write(": keepalive\n\n") } catch { clearInterval(ka) } }, 15000)
   req.on("close", () => clearInterval(ka))
 }
@@ -574,9 +620,8 @@ export function startMcpServer(port?: number) {
     "Access-Control-Allow-Origin": "null",
       })
       const clientId = `dashboard-${Date.now()}`
-      const client: SseClient = { id: clientId, res }
-      sseClients.set(clientId, client)
-      res.on("close", () => sseClients.delete(clientId))
+      sseAddClient({ id: clientId, res })
+      res.on("close", () => sseRemoveClient(clientId))
       sseWrite(res, "connected", { status: "ok" })
       return
     }
@@ -600,23 +645,23 @@ export function startMcpServer(port?: number) {
   return new Promise<{ close: () => void; port: number }>((resolve) => {
     server.on("error", (err: any) => {
       if (err.code === "EADDRINUSE") {
-        console.warn(`[codenexum MCP] Port ${p} in use, trying ${p + 1}...`)
+        log.warn("port in use, trying next", { port: p, next: p + 1 })
         server.listen(p + 1, "127.0.0.1", () => {
           const ap = (server.address() as any)?.port || p + 1
-          console.log(`[codenexum MCP] Server listening on http://127.0.0.1:${ap}`)
+          log.info("MCP server listening", { url: `http://127.0.0.1:${ap}` })
           resolve({ close: () => server.close(), port: ap })
-          autoDiscoverAndIndex().catch((e) => console.warn(`[codenexum] auto-discover crashed: ${e.message}`))
+          autoDiscoverAndIndex().catch((e) => log.warn("auto-discover crashed", { error: e.message }))
         })
       } else {
-        console.error(`[codenexum MCP] Server error:`, err)
+        log.error("MCP server error", { error: err.message || String(err) })
         resolve({ close: () => server.close(), port: p })
       }
     })
     server.listen(p, "127.0.0.1", () => {
       const ap = (server.address() as any)?.port || p
-      console.log(`[codenexum MCP] Server listening on http://127.0.0.1:${ap}`)
+      log.info("MCP server listening", { url: `http://127.0.0.1:${ap}` })
       resolve({ close: () => server.close(), port: ap })
-      autoDiscoverAndIndex().catch((e) => console.warn(`[codenexum] auto-discover crashed: ${e.message}`))
+      autoDiscoverAndIndex().catch((e) => log.warn("auto-discover crashed", { error: e.message }))
     })
   })
 }

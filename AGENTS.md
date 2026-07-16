@@ -72,6 +72,10 @@ apps/
         index.ts          # contextBridge → window.electronAPI.{invoke, getMcpUrl, update.{check,download,install,getStatus,onStatusChange}}
       mcp/
         index.ts          # Re-exports startContextManagerMcp
+        logger.ts         # createLogger(scope): leveled logger (debug/info/warn/error) with child(),
+                          # env override via CODENEXUM_LOG_LEVEL
+        sse.ts            # SSE client registry: sseAddClient, sseRemoveClient, sseGetClients,
+                          # sseWrite, sseBroadcast — isolated from server.ts
         server.ts         # HTTP server on CODENEXUM_MCP_PORT (7770, +1 on EADDRINUSE). Endpoints:
                           #   POST /tools/call — custom RPC {tool, args}
                           #   POST /messages|/mcp — JSON-RPC 2.0 (initialize, tools/list, tools/call)
@@ -79,24 +83,76 @@ apps/
                           #   GET /api/settings — settings JSON
                           #   GET /api/events — EventSource for dashboard
                           #   GET /health — health check
-                          # SSE broadcasts on usage/settings events to all clients
+                          # SSE broadcasts: project (indexed/deleted/renamed), usage, settings
                           # 18 cm_* tools: projects CRUD, settings, stats, aggregate, compression,
-                          # dashboard, analytics, analyze, search, related, impact, log_event,
-                          # read_snippet, search_snippet, cache_get/put, compress_output
+                          # dashboard, analytics, analyze, search (with type:/file:/lang: filters),
+                          # related, impact, log_event, read_snippet, search_snippet, cache_get/put,
+                          # compress_output
         indexer.ts        # walk(), indexProject(), parseFile(), updateFile(), debouncedUpdateFile()
                           # startWatching/stopWatching (fs.watch recursive)
                           # isGeneratedPath, isOversized checks
         auto-register.ts  # ensureProject: sha1[:16] hash → register in registry.sqlite
-        db-paths.ts       # getUserDataDir, getRegistryPath, getProjectDbPath (sha1[:16].sqlite)
+        auto-discover.ts  # discoverAndIndex(anchorDir): scan siblings, auto-index each, broadcast SSE
+        db-paths.ts       # getUserDataDir, getRegistryPath (env CODENEXUM_USER_DATA override),
+                          # getProjectDbPath (sha1[:16].sqlite)
         db-pool.ts        # LRU cache (max 16) of DatabaseSync instances
-        compress.ts       # compressToolOutput (ansi/dedupe/stack/truncate), compressToolOutputSemantic
-                          # extractSemanticSummary (test results, grep, glob summaries)
+        compress.ts       # compressToolOutput (ansi/dedupe/stack/truncate/charcap),
+                          # compressToolOutputSemantic (test/grep/glob summaries),
+                          # char-aware MAX_CHARS_PER_TOOL
         usage.ts          # logEvent → usage_events table; getUsageSummary
         stats.ts          # getProjectStats, getProjectAggregate, getCompressionStatus,
                           # getDashboardState, getGlobalAnalytics (activity timeline, cumulative savings,
                           # top queries, recent activity, index health, hot files)
-        settings.ts       # Settings: 11 booleans + 3 numeric fields, persisted to settings.json
+        settings.ts       # Settings: 12 booleans (incl. autoDiscover) + 3 numeric, persisted to JSON
         cache.ts          # In-memory rawCache (200 entries, 5min TTL)
+        store.ts          # (in @codenexum/sql) FTS5+trigram, schema v3, edges
+        edges.ts          # (in @codenexum/sql) extractEdges: import/call/extend/implement
+        types.ts          # (in @codenexum/sql) ChunkType, Chunk, ProjectRow, ChunkRow, UsageEventRow,
+                          # CountRow, SumRow, MetaRow, ProjectListRow
+      renderer/           # React 19 + Vite + Tailwind
+        main.tsx          # HashRouter: /, /project/:id, /settings
+        App.tsx           # Sidebar + Outlet + ProjectSettingsModal + UpdateModal + mobile drawer
+        hooks/useWebSocket.tsx # EventSource on /api/events → dispatch 'cm-data' CustomEvent
+                                # Listens to: usage, project, settings
+        hooks/useUpdateStatus.ts # Subscribes to update:status-changed IPC
+        components/Sidebar.tsx       # Project list + delete buttons + MCP-connected indicator
+        components/Topbar.tsx        # Sticky header with menu/settings buttons
+        components/ProjectSettingsModal.tsx # Rename project modal
+        components/UpdateModal.tsx   # Global modal: available/downloading/downloaded/error/unsupported states
+        components/ui.tsx           # Card, EmptyState, Spinner, LoadingScreen
+        pages/ProjectsPage.tsx     # Global dashboard: HeroMetric, MiniRing, SavingsMechanismChart,
+                                   # ProjectHealthCard; AreaChart (cumulative savings), BarChart (activity),
+                                   # BarChart (top queries), PieChart (savings), index health grid
+        pages/ProjectDetailPage.tsx # Per-project: hero metrics, savings chart, top files bar chart,
+                                   # chunk types/languages, index health rings, recent activity
+        pages/SettingsPage.tsx     # 12 toggles in 4 categories (intercept, compress, cache, telemetry)
+                                   # + 3 numeric fields (compress threshold, cache TTL, cache max entries)
+        lib/format.ts               # fmt, fmtK, pct, relTime helpers
+        types.ts                    # Project, ProjectSummary, ProjectStats, AggregateData
+  plugin/                 # @codenexum/plugin — thin MCP client (opencode plugin)
+    package.json          # deps: @opencode-ai/plugin ^1.17.18
+    src/
+      index.ts            # Plugin entry: detects MCP URL from env/file, registers 7 context_* tools,
+                          # intercepts read/bash/grep/glob via tool.execute.before/after,
+                          # in-memory + persistent cache, loop detection, turn savings tracking,
+                          # auto-analyzes on init
+  claude-plugin/          # @codenexum/claude-plugin — Claude Code hook equivalent
+    package.json          # Plain Node.js (no bun/esm bundler config), entry dist/hook.js
+    src/
+      hook.ts             # SessionStart + PostToolUse hook handlers
+      detect.ts           # Mirrors opencode plugin's detectCandidate for Claude Code tools
+      denylist.ts         # Hard-coded blocklist (.env, .aws, *.pem, .ssh, etc.) — paths never sent
+      substitute.ts       # Renders cm_read_snippet / cm_search_snippet / cm_compress_output results
+      session-store.ts    # Per-session anti-stale guard: if file was Write/Edit-ed, no substitution on Read
+      audit-log.ts        # JSONL append to ~/.codenexum/audit.log
+      mcp-client.ts       # HTTP client to local CodeNexum MCP server
+    scripts/install.mjs   # Registers the hook in ~/.claude/settings.json (project-scoped only)
+    README.md             # Status: project-level install only, not global; explicit security notes
+
+e2e/                      # E2E tests for the MCP server (Node + experimental-sqlite)
+  server.test.ts          # 38 tests covering every cm_* tool, SSE broadcasts, fileFilter, error cases
+                          # Run with: bun run test:e2e (not part of `bun run test`)
+                          # Requires CODENEXUM_USER_DATA env var to isolate registry/project DBs
       renderer/
         index.html         # SPA entry
         index.css          # Tailwind + dark theme + scrollbar utilities
@@ -151,14 +207,17 @@ docs/
 
 ## Key architecture decisions
 
-- **Plugin is thin** (~530 LOC). All indexing/compression logic lives in the Electron app. Plugin is just an MCP proxy + interception hooks.
+- **Plugin is thin** (~720 LOC). All indexing/compression logic lives in the Electron app. Plugin is just an MCP proxy + interception hooks.
 - **node:sqlite** (Node 22+ DatabaseSync), NOT better-sqlite3. LRU pool in `db-pool.ts` (max 16 connections).
-- **FTS5 with trigram tokenizer** — supports substring search, not just whole-word.
+- **FTS5 with trigram tokenizer** — supports substring search. `buildFtsQuery` adds `*` suffix to each term (trigram prefix match) and uses AND/OR based on path detection (paths with `/` or `.ext` → OR, code search → AND). Falls back to LIKE %term% with snake_case split when FTS returns 0.
 - **MCP transport:** streamable HTTP (JSON-RPC 2.0 + SSE). Also supports custom `/tools/call` for simpler plugin integration.
-- **Registry DB** (`registry.sqlite`) maps project paths → per-project DBs (`<sha1[:16]>.sqlite` in `userData/projects/`).
-- **Settings** persisted to `userData/settings.json` as JSON.
+- **Registry DB** (`registry.sqlite`) maps project paths → per-project DBs (`<sha1[:16]>.sqlite` in `userData/projects/`). Override via `CODENEXUM_USER_DATA` env var.
+- **Settings** persisted to `userData/settings.json` as JSON. Includes `autoDiscover: boolean` toggle.
 - **Dashboard** reads via POST /tools/call against the MCP server (same path the plugin uses).
 - **SSE keepalive:** 15s ping interval.
+- **SSE broadcasts:** `project` (indexed/deleted/renamed), `usage`, `settings`. Renderer hooks all three.
+- **Logger:** `mcp/logger.ts` provides leveled logging with child() scopes; level via `CODENEXUM_LOG_LEVEL`.
+- **Two thin clients:** opencode plugin and claude-plugin hook. Both proxy to the same MCP server; the server owns the index.
 
 ---
 
@@ -220,6 +279,7 @@ Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `contex
 
 - `CODENEXUM_MCP_PORT` (7770) — MCP server port
 - `CODENEXUM_MCP_URL` — override MCP URL (skips discovery)
+- `CODENEXUM_USER_DATA` — override user data dir (used by tests; falls back to Electron `app.getPath("userData")`)
 - `CODENEXUM_TOKENIZER` (tiktoken) — tokenizer mode
 - `CODENEXUM_TOKEN_CACHE_SIZE` (200) — tokenizer LRU size
 - `CODENEXUM_SNIPPET_LINES` (12) — default snippet length
@@ -227,6 +287,7 @@ Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `contex
 - `CODENEXUM_MAX_FILE_BYTES` (1048576) — 1 MiB max file size
 - `CODENEXUM_SMART_READ` — gates ConversationContext
 - `CODENEXUM_MAX_LINES_{TOOL}` — per-tool max lines for compression
+- `CODENEXUM_LOG_LEVEL` (info) — logger min level (debug|info|warn|error)
 - `CODENEXUM_UPDATE_FEED_URL` — override update feed URL (testing/staging; `generic` provider)
 - `CODENEXUM_DISABLE_UPDATES=1` — force `disabled` updater state even in packaged builds
 - `CODENEXUM_UPDATE_CHECK_DELAY_MS` (30000) — delay after `app.whenReady` before first update check
@@ -249,15 +310,15 @@ Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `contex
 
 ## Known issues / gotchas
 
-- **Test files deleted** during v3 refactor. `bun test` has nothing to run.
+- **Tests:** 180 unit tests via `bun test` + 38 E2E tests via `bun run test:e2e`. E2E requires `node --experimental-sqlite` and lives in `e2e/server.test.ts` (separated from `apps/*/test/` so bun doesn't try to load it).
 - **`packages/sql/src/types.ts` CODE_EXTS** adds `.xml` and `.txt` compared to `packages/core/src/types.ts`, but no XML parser exists.
 - **`packages/sql/src/parsers/`** does NOT include an xml parser despite `.xml` in CODE_EXTS.
 - **`mcp-protocol`** workspace referenced in bun.lock has zero source files — placeholder only.
 - **`indexer.ts`** uses `@codenexum/core`'s IGNORE/CODE_EXTS for walking; `packages/sql` has slightly different sets for parsing. This is intentional (walk more, parse what's supported).
-- **`compressToolOutput`** trimming logic has a bug: method detection uses `preSaved > 0` but never checks if preprocessors actually ran. Combined/truncate may mislabel.
 - **`tokenize.py`** exists in root but is not wired to anything.
 - **`v2 DB cleanup`** in main process checks `~/.cache/opencode/` for files matching `context-manager-*.sqlite` or `codenexum-*.sqlite`.
 - **macOS auto-update is unsigned** (no Apple Developer ID). Every updated .dmg prompts Gatekeeper "Open Anyway" once per build. Win portable users do not auto-update — they get an "unsupported" modal with a link to GitHub Releases.
+- **5.6 GB of `apps/electron/out/`** historical builds committed to git. Already in `.gitignore` but the working tree has them. Use `git rm -r --cached apps/electron/out/` to untrack.
 
 ---
 
@@ -266,6 +327,8 @@ Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `contex
 ```bash
 bun install                    # workspace install from bun.lock
 bun run typecheck              # tsc -b (all packages in tsconfig include)
+bun test                       # 180 unit tests across all packages + apps
+bun run test:e2e               # 38 E2E tests for the MCP server (Node + --experimental-sqlite)
 bun run --filter @codenexum/electron dev       # electron-vite dev
 bun run --filter @codenexum/electron package   # electron-builder distributable
 bun run --filter @codenexum/plugin build       # tsc for plugin

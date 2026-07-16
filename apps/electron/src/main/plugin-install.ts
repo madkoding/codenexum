@@ -1,6 +1,9 @@
 import { existsSync, writeFileSync, mkdirSync, readFileSync, rmSync, cpSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { join } from "node:path"
+import { createLogger } from "../mcp/logger.js"
+
+const log = createLogger("plugin-install")
 
 export const MCP_KEY = "codenexum"
 export const PLUGIN_PACKAGE_NAME = "@codenexum/plugin"
@@ -41,7 +44,7 @@ function readOpencodeConfig(cp: string): any | null {
       .replace(/,(\s*[}\]])/g, "$1")
     return JSON.parse(json)
   } catch (e) {
-    console.warn(`[codenexum] could not parse ${cp}:`, e)
+    log.warn("could not parse opencode config", { path: cp, error: (e as Error)?.message || String(e) })
     return null
   }
 }
@@ -138,7 +141,7 @@ function installPluginFiles(paths: PluginInstallPaths): { ok: boolean; reason?: 
 
   const source = bundledExists ? paths.pluginBundled : join(paths.pluginSrc, "index.js")
   if (!bundledExists) {
-    console.warn(`[codenexum] Bundled plugin not found at ${paths.pluginBundled} — using unbundled dist (may fail if @opencode-ai/plugin cannot be resolved)`)
+    log.warn("bundled plugin not found — using unbundled dist", { path: paths.pluginBundled })
   }
   cpSync(source, join(paths.opencodePluginsDir, "index.js"))
 
@@ -167,17 +170,17 @@ export function installOpencodePlugin(
   options: { mcpPort: number; force?: boolean; opencodeAlreadyRunning?: boolean } = { mcpPort: 7770 },
 ): PluginInstallResult {
   if (!existsSync(paths.pluginSrc)) {
-    console.warn(`[codenexum] Plugin dist not found at ${paths.pluginSrc} — skipping install`)
+    log.warn("plugin dist not found — skipping install", { path: paths.pluginSrc })
     return { status: "skipped", reason: "plugin-src-missing" }
   }
   if (!existsSync(paths.opencodeDir)) {
-    console.warn(`[codenexum] opencode config not found at ${paths.opencodeDir} — skipping plugin install`)
+    log.warn("opencode config not found — skipping install", { path: paths.opencodeDir })
     return { status: "skipped", reason: "opencode-config-missing" }
   }
 
   if (existsSync(paths.oldPluginDir)) {
     rmSync(paths.oldPluginDir, { recursive: true, force: true })
-    console.log(`[codenexum] Removed old plugin at ${paths.oldPluginDir}`)
+    log.info("removed old plugin", { path: paths.oldPluginDir })
   }
 
   const mcpUrl = `http://127.0.0.1:${options.mcpPort}`
@@ -193,9 +196,9 @@ export function installOpencodePlugin(
   const pluginNeedsInstall = !pluginHealthy || options.force === true
 
   if (!pluginNeedsInstall && !cfgNeedsWrite) {
-    console.log(`[codenexum] Plugin + opencode config already up to date`)
+    log.info("plugin + opencode config already up to date")
     if (options.opencodeAlreadyRunning) {
-      console.warn(`[codenexum] opencode is already running — restart it for any plugin changes to take effect`)
+      log.warn("opencode is already running — restart for changes to take effect")
     }
     return { status: "up-to-date", configPath: targetConfig }
   }
@@ -203,24 +206,24 @@ export function installOpencodePlugin(
   if (pluginNeedsInstall) {
     const result = installPluginFiles(paths)
     if (!result.ok) {
-      console.error(`[codenexum] ${result.reason} — install aborted`)
+      log.error("install aborted", { reason: result.reason })
       return { status: "skipped", reason: result.reason, configPath: targetConfig }
     }
-    console.log(`[codenexum] Plugin installed to ${paths.opencodePluginsDir}`)
+    log.info("plugin installed", { path: paths.opencodePluginsDir })
     if (options.opencodeAlreadyRunning) {
-      console.warn(`[codenexum] opencode is already running — restart it to load the new plugin`)
+      log.warn("opencode is already running — restart to load new plugin")
     }
   }
 
   if (cfgNeedsWrite) {
     writeOpencodeConfig(targetConfig, pluginSync.cfg)
     if (!existingCfg) {
-      console.log(`[codenexum] Created ${targetConfig} with @codenexum/plugin and MCP server`)
+      log.info("created opencode config", { path: targetConfig })
     } else {
       const changes: string[] = []
       if (mcpSync.changed) changes.push("MCP entry")
       if (pluginSync.changed) changes.push("@codenexum/plugin")
-      console.log(`[codenexum] Updated ${targetConfig}: ${changes.join(" and ") || "no-op"}`)
+      log.info("updated opencode config", { path: targetConfig, changes: changes.join(" and ") || "no-op" })
     }
   }
 
@@ -237,7 +240,7 @@ export function updateMcpConfig(paths: Pick<PluginInstallPaths, "opencodeDir">, 
     const mcpSync = syncMcpEntry(cfg, mcpEntry)
     if (mcpSync.changed) {
       writeOpencodeConfig(cp, mcpSync.cfg)
-      console.log(`[codenexum] MCP config updated to port ${port} in ${cp}`)
+      log.info("MCP config updated", { port, path: cp })
     }
   }
 }

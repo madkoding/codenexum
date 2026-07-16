@@ -166,41 +166,78 @@ export function dbFileCount(db: Db): number {
 const MAX_FTS_TERMS = 30
 
 export function buildFtsQuery(query: string): string {
-  const terms = query.toLowerCase()
-    .split(/[^a-z0-9_]+/)
-    .filter(t => t.length >= 2)
+  const parts = query.toLowerCase().split(/[^a-z0-9_]+/).filter(t => t.length >= 2)
   const seen = new Set<string>()
-  const out: string[] = []
-  for (const t of terms) {
+  const terms: string[] = []
+  for (const t of parts) {
     if (seen.has(t)) continue
     seen.add(t)
-    out.push(`"${t.replace(/"/g, "'")}"`)
-    if (out.length >= MAX_FTS_TERMS) break
+    const safe = t.replace(/"/g, "'")
+    terms.push(`"${safe}"*`)
+    if (terms.length >= MAX_FTS_TERMS) break
   }
-  return out.join(" OR ")
+  if (terms.length === 0) return ""
+  const looksLikePath = query.includes("/") || /\.[a-z0-9]{1,5}$/i.test(query.trim())
+  const joiner = looksLikePath ? " OR " : " AND "
+  return terms.join(joiner)
 }
 
 export function dbSearch(db: Db, query: string, n: number): SearchResult[] {
   const ftsQuery = buildFtsQuery(query)
   if (!ftsQuery) return []
-  return queryAll(db, `
+  const primary = queryAll(db, `
     SELECT name, content, body, file, type, line, lineEnd, lang, bm25(chunks_fts) as score
     FROM chunks_fts
     WHERE chunks_fts MATCH ?
     ORDER BY score
     LIMIT ?
   `, ftsQuery, n) as SearchResult[]
+  if (primary.length > 0) return primary
+  const fallback = dbSearchFallback(db, query, n)
+  return fallback
 }
 
 export function dbRawSearch(db: Db, query: string, n: number): SearchResult[] {
   const ftsQuery = buildFtsQuery(query)
   if (!ftsQuery) return []
-  return queryAll(db, `
+  const primary = queryAll(db, `
     SELECT name, content, body, file, type, line, lineEnd, lang, bm25(chunks_fts) as score
     FROM chunks_fts
     WHERE chunks_fts MATCH ?
     LIMIT ?
   `, ftsQuery, n) as SearchResult[]
+  if (primary.length > 0) return primary
+  const fallback = dbSearchFallback(db, query, n)
+  return fallback
+}
+
+function dbSearchFallback(db: Db, query: string, n: number): SearchResult[] {
+  const tokens = new Set<string>()
+  for (const piece of query.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (piece.length >= 2) tokens.add(piece)
+  }
+  const parts = query.toLowerCase().split(/[^a-z0-9]+/).filter(p => p.length >= 2)
+  for (const p of parts) {
+    const sub = p.split(/_+/).filter(s => s.length >= 2)
+    for (const s of sub) tokens.add(s)
+  }
+  const terms = Array.from(tokens).slice(0, MAX_FTS_TERMS)
+  if (terms.length === 0) return []
+  const conds: string[] = []
+  const params: string[] = []
+  for (const t of terms) {
+    const like = `%${t.replace(/[%_]/g, (m) => `\\${m}`)}%`
+    conds.push("(LOWER(name) LIKE ? OR LOWER(content) LIKE ? OR LOWER(body) LIKE ?)")
+    params.push(like, like, like)
+  }
+  const where = conds.join(" OR ")
+  params.push(String(n))
+  return queryAll(db, `
+    SELECT name, content, body, file, type, line, lineEnd, lang, 0 as score
+    FROM chunks_fts
+    WHERE ${where}
+    LIMIT ?
+  `, ...params) as SearchResult[]
 }
 
 export function dbClear(db: Db): void {
