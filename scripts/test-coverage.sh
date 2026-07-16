@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OUT=$(bun test --coverage packages/*/test apps/*/test 2>&1)
+OUT=$(bun test --coverage packages/core/test packages/sql/test apps/electron/test apps/plugin/test apps/claude-plugin/test 2>&1)
 echo "$OUT"
 
 # ponytail: parse the v8 coverage table; bail if any non-source line is below 100.

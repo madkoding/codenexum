@@ -1,5 +1,9 @@
 import { app, BrowserWindow } from "electron"
 import { autoUpdater, type ProgressInfo, type UpdateInfo } from "electron-updater"
+import { resolveUpdaterConfig } from "./updater-config.js"
+
+export { resolveUpdaterConfig } from "./updater-config.js"
+export type { UpdaterConfig } from "./updater-config.js"
 
 export type UpdateStatus =
   | "idle"
@@ -21,7 +25,7 @@ export type UpdateSnapshot = {
   manualCheck: null | { result: "up-to-date" | "available" | "error" | "checking"; version?: string; error?: string; ts: number }
 }
 
-const CHECK_DELAY_MS = parseInt(process.env.CODENEXUM_UPDATE_CHECK_DELAY_MS || "30000", 10)
+const CHECK_DELAY_MS = resolveUpdaterConfig().checkDelayMs
 
 export class UpdateManager {
   status: UpdateStatus = "idle"

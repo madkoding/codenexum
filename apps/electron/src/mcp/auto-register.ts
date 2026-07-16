@@ -1,6 +1,7 @@
 import { getProjectDbPath, getRegistryPath } from "./db-paths.js"
 import { DatabaseSync } from "node:sqlite"
 import { createHash } from "crypto"
+import type { ProjectRow } from "@codenexum/sql"
 
 export function ensureProject(projectDir: string): string {
   const dbPath = getProjectDbPath(projectDir)
@@ -15,7 +16,7 @@ export function ensureProject(projectDir: string): string {
   try {
     reg.exec("ALTER TABLE projects ADD COLUMN files INTEGER DEFAULT 0")
   } catch {}
-  const existing = reg.prepare("SELECT id FROM projects WHERE path = ?").get(projectDir)
+  const existing = reg.prepare("SELECT id FROM projects WHERE path = ?").get(projectDir) as { id: string } | undefined
   if (!existing) {
     const id = createHash("sha1").update(projectDir).digest("hex").slice(0, 16)
     const name = projectDir.split("/").pop() || projectDir

@@ -68,6 +68,13 @@ export default function App() {
     if (project?.id) setSettingsProject(project)
   }
 
+  const openFolder = () => {
+    if (project?.path) window.electronAPI.openPath(project.path)
+  }
+  const showInFolder = () => {
+    if (project?.path) window.electronAPI.showInFolder(project.path)
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-bg">
       <aside
@@ -87,6 +94,8 @@ export default function App() {
             subtitle={isProjectPage ? project?.path : undefined}
             onMenuClick={() => setDrawerOpen(true)}
             onSettingsClick={openSettings}
+            onOpenFolder={openFolder}
+            onShowInFolder={showInFolder}
           />
         ) : null}
         {isHomeOrSettings ? (

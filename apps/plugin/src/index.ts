@@ -53,7 +53,27 @@ interface CallInfo {
 
 const pendingCalls = new Map<string, CallInfo>()
 
-let initialAnalyzeDone = false
+const indexedProjects = new Set<string>()
+const indexingInFlight = new Set<string>()
+
+async function ensureProjectIndexed(projectDir: string) {
+  if (!projectDir) return
+  if (indexedProjects.has(projectDir) || indexingInFlight.has(projectDir)) return
+  indexingInFlight.add(projectDir)
+  try {
+    const ok = await callMcpJson("cm_analyze", { path: projectDir })
+    if (ok !== null) {
+      indexedProjects.add(projectDir)
+      pluginLog(`indexed project: ${projectDir}`)
+    } else {
+      pluginLog(`cm_analyze unavailable for ${projectDir}`, "warn")
+    }
+  } catch (e: any) {
+    pluginLog(`cm_analyze failed for ${projectDir}: ${e?.message || e}`, "warn")
+  } finally {
+    indexingInFlight.delete(projectDir)
+  }
+}
 
 interface CacheEntry { output: string; ts: number; mtime?: number; filePath?: string }
 
@@ -225,16 +245,104 @@ export function detectCandidate(tool: string, args: any, projectDir: string, set
   }
 
   if (tool === "bash" || tool === "sh" || tool === "zsh" || tool === "fish" || tool === "shell") {
-    if (!settings.readInterception) return null
     const cmd = (args?.command || args?.cmd || "").trim()
-    const match = cmd.match(/^(cat|head|tail)\s+(\S+)/)
-    if (match) {
-      const rawPath = match[2].replace(/^~/, HOME)
-      const absPath = rawPath.startsWith("/") ? rawPath : join(projectDir, rawPath)
-      if (absPath.startsWith(projectDir)) {
-        return { tool: "bash-read", path: absPath, projectDir }
+    if (!cmd) return null
+
+    const resolveFile = (raw: string): string | null => {
+      const cleaned = raw.replace(/^~/, HOME).replace(/^["']|["']$/g, "")
+      const abs = cleaned.startsWith("/") ? cleaned : join(projectDir, cleaned)
+      return abs.startsWith(projectDir) ? abs : null
+    }
+
+    const tokenize = (s: string): { flags: string; operands: string[] } => {
+      const tokens: string[] = []
+      let cur = ""
+      let quote: string | null = null
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i]
+        if (quote) {
+          if (ch === quote) quote = null
+          else cur += ch
+        } else if (ch === '"' || ch === "'") {
+          quote = ch
+        } else if (ch === " " || ch === "\t") {
+          if (cur) { tokens.push(cur); cur = "" }
+        } else {
+          cur += ch
+        }
+      }
+      if (cur) tokens.push(cur)
+      const flags: string[] = []
+      const operands: string[] = []
+      for (const t of tokens) {
+        if (t.startsWith("-") && !/^-\d/.test(t) && !/\.\w+$/.test(t)) flags.push(t)
+        else operands.push(t)
+      }
+      return { flags: flags.join(" "), operands }
+    }
+
+    const isPath = (s: string): boolean => /\.\w+$/.test(s) || s.startsWith("/") || s.startsWith("./") || s.startsWith("../") || s.includes("/")
+
+    const head = cmd.split(/\s+/, 1)[0]
+    const after = cmd.slice(head.length).trim()
+    const { flags, operands } = tokenize(after)
+
+    const readCmds = new Set(["cat", "head", "tail", "less", "more", "bat", "batcat", "xxd", "strings", "base64",
+                              "md5sum", "sha1sum", "sha256sum", "wc", "file", "stat", "du", "fold", "column", "rev",
+                              "awk", "sed", "cut", "tr", "sort", "uniq", "nl", "paste", "comm", "join", "tac", "dd",
+                              "iconv", "od", "hexdump", "tokei", "scc", "cloc"])
+    if (readCmds.has(head) && settings.readInterception) {
+      const fileOp = operands.find(isPath)
+      if (fileOp) {
+        const path = resolveFile(fileOp)
+        if (path) return { tool: "bash-read", path, projectDir }
       }
     }
+
+    const grepCmds = new Set(["grep", "rg", "ripgrep", "ag", "ack", "pt", "sift", "ugrep"])
+    if (grepCmds.has(head) && settings.grepInterception) {
+      const patternOp = operands[0]
+      const fileOp = operands.slice(1).find(isPath)
+      if (patternOp && fileOp && !patternOp.startsWith("-")) {
+        const path = resolveFile(fileOp)
+        if (path) return { tool: "bash-grep", path, query: patternOp, projectDir }
+      }
+    }
+
+    if (head === "git" && operands[0]) {
+      const sub = operands[0]
+      const subArgs = operands.slice(1)
+      if (sub === "grep" && settings.grepInterception) {
+        const patternOp = subArgs[0]
+        const sepIdx = subArgs.indexOf("--")
+        const afterSep = sepIdx >= 0 ? subArgs.slice(sepIdx + 1) : subArgs
+        const fileOp = afterSep.slice(1).find(isPath)
+        if (patternOp && fileOp && !patternOp.startsWith("-")) {
+          const path = resolveFile(fileOp)
+          if (path) return { tool: "bash-grep", path, query: patternOp, projectDir }
+        }
+      }
+      if ((sub === "show" || sub === "diff" || sub === "log") && settings.readInterception) {
+        const fileOp = subArgs.find(o => isPath(o) || /^\S+:\S+/.test(o))
+        if (fileOp) {
+          const cleanPath = fileOp.replace(/^[^:]+:/, "")
+          if (isPath(cleanPath)) {
+            const path = resolveFile(cleanPath)
+            if (path) return { tool: "bash-read", path, projectDir }
+          }
+        }
+      }
+    }
+
+    if (head === "jq" && settings.grepInterception) {
+      const queryOp = operands[0]
+      const fileOp = operands.slice(1).find(isPath)
+      if (queryOp && fileOp) {
+        const path = resolveFile(fileOp)
+        if (path) return { tool: "bash-grep", path, query: queryOp, projectDir }
+      }
+    }
+
     return null
   }
 
@@ -352,13 +460,6 @@ async function flushTurnSavings(sessionID: string) {
   turnSavings.delete(sessionID)
 }
 
-async function runInitialAnalyze() {
-  if (initialAnalyzeDone) return
-  if (!pluginDirectory) return
-  const ok = await callMcpJson("cm_analyze", { path: pluginDirectory })
-  if (ok !== null) initialAnalyzeDone = true
-}
-
 let pluginLog: (msg: string, level?: "debug" | "info" | "warn" | "error") => void = () => {}
 let pluginClient: PluginInput["client"] | null = null
 let pluginDirectory: string = process.cwd()
@@ -374,7 +475,7 @@ export const plugin: Plugin = async (input: PluginInput) => {
   }
   pluginLog(`plugin loaded, cwd=${pluginDirectory}`)
   loadPersistentCache(true)
-  void runInitialAnalyze()
+  void ensureProjectIndexed(pluginDirectory)
   return {
     event: async ({ event }) => {
       pluginLog(`event: ${event.type}`)
@@ -393,7 +494,11 @@ export const plugin: Plugin = async (input: PluginInput) => {
       if (!args) return
 
       const projectDir = input.directory || process.cwd()
-      void runInitialAnalyze()
+      if (input.directory && input.directory !== pluginDirectory) {
+        pluginDirectory = input.directory
+        pluginLog(`project changed to ${pluginDirectory}`)
+      }
+      void ensureProjectIndexed(projectDir)
       const settings = await getSettings()
       const candidate = detectCandidate(t, args, projectDir, settings)
       if (candidate) pendingCalls.set(callID, candidate)
@@ -458,8 +563,8 @@ export const plugin: Plugin = async (input: PluginInput) => {
               if (settings.cache) cacheSet(cacheKey, substitute!, settings.cacheMaxEntries, info.path)
             }
           }
-        } else if (info && (info.tool === "grep" || info.tool === "glob")) {
-          const cacheKey = `grep:${info.projectDir}:${(info.query as string)}`
+        } else if (info && (info.tool === "grep" || info.tool === "glob" || info.tool === "bash-grep")) {
+          const cacheKey = `grep:${info.projectDir}:${(info.query as string)}:${info.path || ""}`
           if (settings.cache) {
             const cachedValue = cacheGet(cacheKey, settings.cacheTtlMs)
             if (cachedValue !== null) {
@@ -471,6 +576,7 @@ export const plugin: Plugin = async (input: PluginInput) => {
             const result = await callMcpJson("cm_search_snippet", {
               path: info.projectDir,
               query: info.query,
+              ...(info.path ? { fileFilter: info.path } : {}),
             })
             if (result && result.result != null) {
               substitute = String(result.result)

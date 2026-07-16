@@ -7,6 +7,8 @@ declare global {
       getMcpUrl: () => Promise<string>
       getSettings: () => Promise<any>
       reloadCloseBehavior: () => Promise<void>
+      openPath: (p: string) => Promise<boolean>
+      showInFolder: (p: string) => Promise<boolean>
       update: {
         check: () => Promise<void>
         download: () => Promise<void>
@@ -23,23 +25,43 @@ export function useWebSocket() {
 
   useEffect(() => {
     let eventSource: EventSource | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-    window.electronAPI.invoke("get-mcp-url").then((url: string) => {
+    const connect = async () => {
+      const url = await window.electronAPI.invoke("get-mcp-url")
+      if (!url) {
+        reconnectTimer = setTimeout(connect, 2000)
+        return
+      }
       const es = new EventSource(`${url}/api/events`)
       eventSource = es
 
       es.onopen = () => setConnected(true)
 
-      es.addEventListener("usage", (e: MessageEvent) => {
+      const forward = (kind: string) => (e: MessageEvent) => {
         try {
-          window.dispatchEvent(new CustomEvent("cm-data", { detail: JSON.parse(e.data) }))
+          window.dispatchEvent(new CustomEvent("cm-data", { detail: { kind, payload: JSON.parse(e.data) } }))
         } catch {}
-      })
+      }
 
-      es.onerror = () => setConnected(false)
-    })
+      es.addEventListener("usage", forward("usage"))
+      es.addEventListener("project", forward("project"))
+      es.addEventListener("settings", forward("settings"))
 
-    return () => eventSource?.close()
+      es.onerror = () => {
+        setConnected(false)
+        es.close()
+        eventSource = null
+        reconnectTimer = setTimeout(connect, 2000)
+      }
+    }
+
+    connect()
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      eventSource?.close()
+    }
   }, [])
 
   return { connected }

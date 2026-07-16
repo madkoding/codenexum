@@ -124,6 +124,7 @@ function applyPreprocessors(output: string, opts: { ansi: boolean; dedupe: boole
 export function compressToolOutput(toolID: string, output: string, opts: { ansi?: boolean; dedupe?: boolean; stack?: boolean } = {}): CompressResult {
   const originalLen = output.length
   const maxLines = getMaxLines(toolID)
+  const maxChars = MAX_CHARS_PER_TOOL[toolID] ?? MAX_CHARS_DEFAULT
 
   const { output: preprocessed, saved: preSaved } = applyPreprocessors(output, {
     ansi: opts.ansi !== false,
@@ -132,13 +133,13 @@ export function compressToolOutput(toolID: string, output: string, opts: { ansi?
   })
 
   const lines = preprocessed.split("\n")
-  if (lines.length <= maxLines && preSaved === 0) {
+  if (lines.length <= maxLines && preSaved === 0 && preprocessed.length <= maxChars) {
     return { output, method: "none", originalLen, compressedLen: originalLen, tokensSaved: 0 }
   }
 
   let method: CompressResult["method"] = "truncate"
-  if (preSaved > 0 && lines.length > maxLines) method = "combined"
-  else if (preSaved > 0) method = preSaved > 0 ? "combined" : method
+  if (preSaved > 0 && (lines.length > maxLines || preprocessed.length > maxChars)) method = "combined"
+  else if (preSaved > 0) method = "combined"
 
   let kept = lines
   if (lines.length > maxLines) {
@@ -146,7 +147,10 @@ export function compressToolOutput(toolID: string, output: string, opts: { ansi?
     const omitted = lines.length - maxLines
     kept.push(`\n[... ${omitted} lines omitted by codenexum compression]`)
   }
-  const finalOut = kept.join("\n")
+  let finalOut = kept.join("\n")
+  if (finalOut.length > maxChars) {
+    finalOut = finalOut.slice(0, maxChars) + `\n[... ${preprocessed.length - maxChars} chars omitted by codenexum compression]`
+  }
   const finalLen = finalOut.length
   const saved = Math.max(0, charsToTokens(originalLen - finalLen))
 
@@ -157,6 +161,15 @@ export function compressToolOutput(toolID: string, output: string, opts: { ansi?
     compressedLen: finalLen,
     tokensSaved: saved,
   }
+}
+
+const MAX_CHARS_DEFAULT = 50_000
+const MAX_CHARS_PER_TOOL: Record<string, number> = {
+  read: 12_000,
+  bash: 16_000,
+  grep: 12_000,
+  rg: 12_000,
+  test: 12_000,
 }
 
 let semanticCompressionSaved = 0
@@ -170,7 +183,7 @@ export function compressToolOutputSemantic(toolID: string, output: string, opts:
   const cleaned = opts.ansi !== false ? stripAnsi(output) : output
   const lines = cleaned.split("\n")
   if (lines.length < 3) {
-    return { output, method: "none", originalLen, compressedLen: originalLen, tokensSaved: 0 }
+    return compressToolOutput(toolID, output, opts)
   }
 
   const summary = extractSemanticSummary(lines, toolID)

@@ -4,18 +4,19 @@ import { ensureProject } from "./auto-register.js"
 import { getRegistryPath } from "./db-paths.js"
 import { getUsageSummary } from "./usage.js"
 import { getSemanticCompressionSaved } from "./compress.js"
+import type { CountRow, SumRow, MetaRow, DbPathRow, PathRow, ProjectListRow, ProjectRow } from "@codenexum/sql"
 
 function getDbPathForProject(projectDir: string): string | null {
   ensureProject(projectDir)
   const reg = new DatabaseSync(getRegistryPath())
-  const row = reg.prepare("SELECT dbPath FROM projects WHERE path = ?").get(projectDir) as any
+  const row = reg.prepare("SELECT dbPath FROM projects WHERE path = ?").get(projectDir) as DbPathRow | undefined
   reg.close()
   return row?.dbPath || null
 }
 
 function getDefaultDbPath(): string | null {
   const reg = new DatabaseSync(getRegistryPath())
-  const row = reg.prepare("SELECT dbPath FROM projects ORDER BY lastSeen DESC LIMIT 1").get() as any
+  const row = reg.prepare("SELECT dbPath FROM projects ORDER BY lastSeen DESC LIMIT 1").get() as DbPathRow | undefined
   reg.close()
   return row?.dbPath || null
 }
@@ -29,10 +30,10 @@ export function getProjectStats(projectDir?: string) {
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
   const tableNames = new Set(tables.map(t => t.name))
   if (!tableNames.has("chunks_fts") || !tableNames.has("file_hashes")) { db.close(); return emptyStats() }
-  const chunks = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
-  const files = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
-  const edges = (db.prepare("SELECT count(*) as c FROM edges").get() as any).c
-  const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as any)?.value || null
+  const chunks = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as CountRow | undefined)?.c ?? 0
+  const files = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as CountRow | undefined)?.c ?? 0
+  const edges = (db.prepare("SELECT count(*) as c FROM edges").get() as CountRow | undefined)?.c ?? 0
+  const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as MetaRow | undefined)?.value || null
   const topFiles = (db.prepare("SELECT file, count(*) as c FROM chunks_fts GROUP BY file ORDER BY c DESC LIMIT 10").all() as { file: string; c: number }[]).map(f => ({ path: f.file, count: f.c }))
   const languages = (db.prepare("SELECT lang, count(*) as c FROM chunks_fts GROUP BY lang ORDER BY c DESC").all() as { lang: string; c: number }[]).map(l => ({ name: l.lang, count: l.c }))
   db.close()
@@ -75,7 +76,7 @@ function emptyUsage() {
 
 function resolveDirFromDbPath(dbPath: string): string | null {
   const reg = new DatabaseSync(getRegistryPath())
-  const row = reg.prepare("SELECT path FROM projects WHERE dbPath = ?").get(dbPath) as any
+  const row = reg.prepare("SELECT path FROM projects WHERE dbPath = ?").get(dbPath) as PathRow | undefined
   reg.close()
   return row?.path || null
 }
@@ -113,7 +114,7 @@ export function getDashboardState() {
   const regPath = getRegistryPath()
   if (!existsSync(regPath)) return { projects: [], global: { totalChunks: 0, totalFiles: 0 }, compression: getCompressionStatus() }
   const db = new DatabaseSync(regPath)
-  const projects = (db.prepare("SELECT id, path, name, dbPath, lastSeen FROM projects ORDER BY lastSeen DESC").all() as any[]).map(p => ({
+  const projects = (db.prepare("SELECT id, path, name, dbPath, lastSeen FROM projects ORDER BY lastSeen DESC").all() as unknown as ProjectRow[]).map(p => ({
     id: p.id, path: p.path, name: p.name, dbPath: p.dbPath, lastSeen: p.lastSeen,
   }))
   db.close()
@@ -125,15 +126,15 @@ export function getDashboardState() {
         const tables = pdb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
         const tableSet = new Set(tables.map(t => t.name))
         if (tableSet.has("chunks_fts")) {
-          totalChunks += (pdb.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
+          totalChunks += (pdb.prepare("SELECT count(*) as c FROM chunks_fts").get() as CountRow | undefined)?.c ?? 0
         }
         if (tableSet.has("file_hashes")) {
-          totalFiles += (pdb.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
+          totalFiles += (pdb.prepare("SELECT count(*) as c FROM file_hashes").get() as CountRow | undefined)?.c ?? 0
         }
         if (tableSet.has("usage_events")) {
-          const r = pdb.prepare("SELECT COALESCE(SUM(tokens_saved), 0) as s, COUNT(*) as c FROM usage_events").get() as any
-          totalSavedTokens += r.s || 0
-          totalEvents += r.c || 0
+          const r = pdb.prepare("SELECT COALESCE(SUM(tokens_saved), 0) as s, COUNT(*) as c FROM usage_events").get() as SumRow | undefined
+          totalSavedTokens += r?.s || 0
+          totalEvents += r?.c || 0
         }
         pdb.close()
       } catch {}
@@ -146,23 +147,118 @@ export function getDashboardState() {
   }
 }
 
-interface ActivityBucket { hour: string; count: number; saved: number }
+export type AnalyticsPeriod = "year" | "month" | "week" | "day"
+
+export type SavingsMechanism = "indexSubstitution" | "searchSnippets" | "compression" | "semanticCompression" | "cacheHit"
+
+export const SAVINGS_MECHANISM_KEYS: SavingsMechanism[] = [
+  "indexSubstitution",
+  "searchSnippets",
+  "compression",
+  "semanticCompression",
+  "cacheHit",
+]
+
+interface ActivityBucket {
+  hour: string
+  count: number
+  saved: number
+  byMechanism: Record<SavingsMechanism, number>
+}
 interface CumulativePoint { ts: string; total: number }
 interface TopQuery { query: string; count: number; saved: number }
 interface RecentActivity { type: string; target: string; tokensSaved: number; ts: string; project: string }
 interface IndexHealthRow { id: string; name: string; path: string; lastIndexed: string | null; chunks: number; files: number; zeroChunkFiles: number }
 interface HotFileRow { path: string; count: number; project: string; chunks: number }
 
+interface PeriodSpec {
+  granularity: "hour" | "day" | "month"
+  bucketCount: number
+  stepMs: number
+  bucketKey: (d: Date) => string
+  sqlWindow: string
+}
+
+const PERIOD_SPECS: Record<AnalyticsPeriod, PeriodSpec> = {
+  year: {
+    granularity: "month",
+    bucketCount: 12,
+    stepMs: 30 * 24 * 60 * 60 * 1000,
+    bucketKey: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+    sqlWindow: "-12 months",
+  },
+  month: {
+    granularity: "day",
+    bucketCount: 30,
+    stepMs: 24 * 60 * 60 * 1000,
+    bucketKey: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`,
+    sqlWindow: "-30 days",
+  },
+  week: {
+    granularity: "day",
+    bucketCount: 7,
+    stepMs: 24 * 60 * 60 * 1000,
+    bucketKey: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`,
+    sqlWindow: "-7 days",
+  },
+  day: {
+    granularity: "hour",
+    bucketCount: 24,
+    stepMs: 60 * 60 * 1000,
+    bucketKey: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}T${String(d.getUTCHours()).padStart(2, "0")}`,
+    sqlWindow: "-1 day",
+  },
+}
+
+export const ANALYTICS_PERIODS: AnalyticsPeriod[] = ["year", "month", "week", "day"]
+
+function resolvePeriod(input: unknown): AnalyticsPeriod {
+  return ANALYTICS_PERIODS.includes(input as AnalyticsPeriod) ? (input as AnalyticsPeriod) : "week"
+}
+
+function eventTypeToMechanism(eventType: string): SavingsMechanism | null {
+  switch (eventType) {
+    case "index_substitute":
+    case "file_read":
+      return "indexSubstitution"
+    case "search_savings":
+      return "searchSnippets"
+    case "compression":
+      return "compression"
+    case "semantic_compression":
+      return "semanticCompression"
+    case "cache_hit":
+      return "cacheHit"
+    default:
+      return null
+  }
+}
+
 function listRegisteredProjects(): { id: string; name: string; path: string; dbPath: string }[] {
   const regPath = getRegistryPath()
   if (!existsSync(regPath)) return []
   const reg = new DatabaseSync(regPath)
-  const rows = reg.prepare("SELECT id, name, path, dbPath FROM projects ORDER BY lastSeen DESC").all() as any[]
+  const rows = reg.prepare("SELECT id, name, path, dbPath FROM projects ORDER BY lastSeen DESC").all() as unknown as ProjectListRow[]
   reg.close()
   return rows
 }
 
-export function getGlobalAnalytics() {
+function eventToBucketKey(rawTs: string, granularity: "hour" | "day" | "month"): string | null {
+  if (!rawTs) return null
+  const d = new Date(rawTs.includes("T") ? rawTs : rawTs + "Z")
+  if (Number.isNaN(d.getTime())) return null
+  if (granularity === "month") {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`
+  }
+  if (granularity === "day") {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+  }
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}T${String(d.getUTCHours()).padStart(2, "0")}`
+}
+
+export function getGlobalAnalytics(periodInput?: string) {
+  const period = resolvePeriod(periodInput)
+  const spec = PERIOD_SPECS[period]
   const projects = listRegisteredProjects()
   const activityBuckets = new Map<string, ActivityBucket>()
   const allEvents: { ts: string; type: string; tokensSaved: number; meta: any; project: string }[] = []
@@ -170,12 +266,17 @@ export function getGlobalAnalytics() {
   const indexHealth: IndexHealthRow[] = []
   const hotFilesMap = new Map<string, HotFileRow>()
 
-  for (let i = 0; i < 24; i++) {
-    const d = new Date(Date.now() - (23 - i) * 60 * 60 * 1000)
-    const iso = d.toISOString()
-    const hour = iso.slice(0, 13)
-    activityBuckets.set(hour, { hour, count: 0, saved: 0 })
+  for (let i = 0; i < spec.bucketCount; i++) {
+    const d = new Date(Date.now() - (spec.bucketCount - 1 - i) * spec.stepMs)
+    const key = spec.bucketKey(d)
+    activityBuckets.set(key, {
+      hour: key,
+      count: 0,
+      saved: 0,
+      byMechanism: { indexSubstitution: 0, searchSnippets: 0, compression: 0, semanticCompression: 0, cacheHit: 0 },
+    })
   }
+  const lastBucketKey = spec.bucketKey(new Date())
 
   for (const proj of projects) {
     if (!existsSync(proj.dbPath)) continue
@@ -192,17 +293,25 @@ export function getGlobalAnalytics() {
       const events = db.prepare(`
         SELECT event_type, tokens_saved, meta, ts
         FROM usage_events
-        WHERE ts > datetime('now', '-1 day')
-      `).all() as { event_type: string; tokens_saved: number; meta: string | null; ts: string }[]
+        WHERE ts > datetime('now', '${spec.sqlWindow}') OR ts IS NULL
+      `).all() as { event_type: string; tokens_saved: number; meta: string | null; ts: string | null }[]
 
       for (const e of events) {
-        const hour = e.ts.slice(0, 13).replace(" ", "T")
-        const b = activityBuckets.get(hour)
-        if (b) { b.count += 1; b.saved += e.tokens_saved || 0 }
+        const bucketKey = e.ts ? eventToBucketKey(e.ts, spec.granularity) : lastBucketKey
+        if (!bucketKey) continue
+        const b = activityBuckets.get(bucketKey)
+        const saved = e.tokens_saved || 0
+        if (b) {
+          b.count += 1
+          b.saved += saved
+          const mech = eventTypeToMechanism(e.event_type)
+          if (mech) b.byMechanism[mech] += saved
+        }
 
         let meta: any = null
         try { meta = e.meta ? JSON.parse(e.meta) : null } catch {}
-        allEvents.push({ ts: e.ts, type: e.event_type, tokensSaved: e.tokens_saved || 0, meta, project: proj.name })
+        const eventTs = e.ts || new Date().toISOString()
+        allEvents.push({ ts: eventTs, type: e.event_type, tokensSaved: saved, meta, project: proj.name })
 
         if (e.event_type === "search" && meta?.query) {
           const q = String(meta.query)
@@ -228,9 +337,9 @@ export function getGlobalAnalytics() {
 
     if (tableSet.has("chunks_fts")) {
       try {
-        const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as any)?.value || null
-        const c = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as any).c
-        const f = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as any).c
+        const lastIndexed = (db.prepare("SELECT value FROM meta WHERE key = 'lastIndexed'").get() as MetaRow | undefined)?.value || null
+        const c = (db.prepare("SELECT count(*) as c FROM chunks_fts").get() as CountRow | undefined)?.c ?? 0
+        const f = (db.prepare("SELECT count(*) as c FROM file_hashes").get() as CountRow | undefined)?.c ?? 0
         let zeroChunkFiles = 0
         try {
           // Use files_indexed (PK on file) for O(log n) membership check.
@@ -241,7 +350,7 @@ export function getGlobalAnalytics() {
               SELECT count(*) as c FROM file_hashes fh
               LEFT JOIN files_indexed fi ON fi.file = fh.file
               WHERE fi.file IS NULL
-            `).get() as any).c
+            `).get() as CountRow | undefined)?.c ?? 0
           } else {
             zeroChunkFiles = (db.prepare(`
               SELECT count(*) as c FROM file_hashes fh
@@ -249,7 +358,7 @@ export function getGlobalAnalytics() {
                 SELECT DISTINCT file FROM chunks_fts
               ) cf ON cf.file = fh.file
               WHERE cf.file IS NULL
-            `).get() as any).c
+            `).get() as CountRow | undefined)?.c ?? 0
           }
         } catch {}
         indexHealth.push({ id: proj.id, name: proj.name, path: proj.path, lastIndexed, chunks: c, files: f, zeroChunkFiles })
@@ -278,12 +387,12 @@ export function getGlobalAnalytics() {
   allEvents.sort((a, b) => a.ts.localeCompare(b.ts))
   let runningTotal = 0
   const cumulativeSavings: CumulativePoint[] = []
-  const dayStart = Date.now() - 24 * 60 * 60 * 1000
+  const windowStart = Date.now() - spec.bucketCount * spec.stepMs
   for (const e of allEvents) {
     if (e.tokensSaved > 0) {
       runningTotal += e.tokensSaved
       const tsMs = new Date(e.ts + "Z").getTime()
-      if (tsMs >= dayStart) cumulativeSavings.push({ ts: e.ts, total: runningTotal })
+      if (tsMs >= windowStart) cumulativeSavings.push({ ts: e.ts, total: runningTotal })
     }
   }
   if (cumulativeSavings.length === 0) cumulativeSavings.push({ ts: new Date().toISOString(), total: 0 })
@@ -329,5 +438,5 @@ export function getGlobalAnalytics() {
     indexHealthCount: indexHealth.length,
   }
 
-  return { activityTimeline, cumulativeSavings, topQueries, recentActivity, indexHealth, hotFiles, globalTotals }
+  return { period, granularity: spec.granularity, activityTimeline, cumulativeSavings, topQueries, recentActivity, indexHealth, hotFiles, globalTotals }
 }

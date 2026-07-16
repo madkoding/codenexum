@@ -41,13 +41,15 @@ export function logEvent(
   const dbPath = ensureProject(projectDir)
   const db = new DatabaseSync(dbPath)
   ensureUsageSchema(db)
+  const ts = new Date().toISOString()
   db.prepare(
-    "INSERT INTO usage_events (event_type, tokens_saved, tokens_used, meta) VALUES (?, ?, ?, ?)"
+    "INSERT INTO usage_events (event_type, tokens_saved, tokens_used, meta, ts) VALUES (?, ?, ?, ?, ?)"
   ).run(
     type,
     opts.tokensSaved || 0,
     opts.tokensUsed || 0,
-    opts.meta ? JSON.stringify(opts.meta) : null
+    opts.meta ? JSON.stringify(opts.meta) : null,
+    ts
   )
   db.close()
 }

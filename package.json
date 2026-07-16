@@ -1,6 +1,6 @@
 {
   "name": "@codenexum/electron",
-  "version": "0.99.9",
+  "version": "0.99.10",
   "private": true,
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -10,7 +10,8 @@
   ],
   "scripts": {
     "typecheck": "tsc -b",
-    "test": "bun test packages/*/test apps/*/test",
+    "test": "bun test packages/core/test packages/sql/test apps/electron/test apps/plugin/test apps/claude-plugin/test",
+    "test:e2e": "bun build apps/electron/src/mcp/server.ts --target=node --format=esm --outfile=/tmp/codenexum-server-bundle.js && node --experimental-sqlite --experimental-strip-types --test e2e/server-e2e.node.ts e2e/updater-feed.node.ts",
     "test:coverage": "bash scripts/test-coverage.sh",
     "lint": "tsc -b",
     "version": "bun run scripts/sync-version.ts",

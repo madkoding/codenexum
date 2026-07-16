@@ -1,4 +1,7 @@
 apps/electron/dist/
+# electron-builder output: DMGs, EXEs, AppImages, mac/win/linux-unpacked.
+# 5+ GB per platform per build — never commit. Regenerate with
+# `bun run --filter @codenexum/electron package`.
 apps/electron/out/
 apps/electron/build/icon.png
 apps/plugin/dist/

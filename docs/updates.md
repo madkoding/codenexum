@@ -41,18 +41,76 @@ CodeNexum ships auto-updates via GitHub Releases. The Electron app polls the lat
 
 The Windows portable build is kept for users who prefer it, but it does not receive auto-updates. The first time such a user opens the app after we publish a new version, they will see the "unsupported" modal with a link to GitHub Releases.
 
+## Cross-platform builds (local, no CI)
+
+The Mac `.dmg` must be built on macOS (electron-builder needs the host's `hdiutil`). Windows and Linux builds run in Docker under the official `electronuserland/builder` images so they don't require Windows/Linux machines.
+
+### Mac (host)
+
+```bash
+bun install --frozen-lockfile
+bun run --filter @codenexum/plugin build
+bun run --filter @codenexum/plugin bundle
+bun run --filter @codenexum/electron package   # builds x64 + arm64 dmg
+```
+
+### Windows + Linux (Docker)
+
+```bash
+# Build the dist (vite) and plugin bundle on the host first — these are platform-agnostic
+bun run --filter @codenexum/plugin bundle
+bun run --filter @codenexum/electron build
+
+# Windows nsis + portable (image :wine has makensis + wine)
+mv apps/electron/out /tmp/out.mac   # stash mac output if any
+docker run --rm --platform linux/amd64 \
+  -v "$PWD:/project" -w /project \
+  electronuserland/builder:wine \
+  bash -c "cd /project/apps/electron && ./node_modules/.bin/electron-builder --win --x64 --publish never --config.npmRebuild=false"
+mv apps/electron/out /tmp/out.win
+
+# Linux AppImage x64 + arm64
+docker run --rm --platform linux/amd64 \
+  -v "$PWD:/project" -w /project \
+  electronuserland/builder:latest \
+  bash -c "cd /project/apps/electron && ./node_modules/.bin/electron-builder --linux --x64 --arm64 --publish never --config.npmRebuild=false"
+mv apps/electron/out /tmp/out.linux
+
+# Combine all artifacts
+rm -rf apps/electron/out
+cp /tmp/out.mac/*.dmg* /tmp/out.mac/latest-mac.yml apps/electron/out/
+cp /tmp/out.win/*.exe* /tmp/out.win/latest.yml apps/electron/out/
+cp /tmp/out.linux/*.AppImage /tmp/out.linux/latest-linux*.yml apps/electron/out/
+```
+
+### Mac ARM + qemu-user workaround
+
+`electronuserland/builder:wine` runs under `qemu-user` on Mac ARM hosts. Wine's `mmap_fixed` assertion fails when electron-builder re-launches the produced `.exe` to extract the uninstaller (NsisTarget). Patching `node_modules/.bun/app-builder-lib@<ver>/node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js` to use `UninstallerReader` (the byte reader used on macOS Catalina) instead of `WineVm` on Linux makes the build succeed without qemu-emulating wine:
+
+```js
+// replace the `if (isMacOsCatalina())` block to also match linux
+if ((0, macosVersion_1.isMacOsCatalina)() || process.platform === "linux") {
+  // ...UninstallerReader.exec path...
+}
+else {
+  // WineVm.exec path
+}
+```
+
+The patch is in `node_modules` and gets reset on the next `bun install` — reapply it before each cross-build.
+
 ## Release procedure (manual)
 
 The CI workflow is optional. Releases are uploaded to GitHub manually with `gh`:
 
 ```bash
 # 1. Bump version
-$EDITOR packages/core/src/version.ts  # APP_VERSION = "0.99.9"
+$EDITOR packages/core/src/version.ts  # APP_VERSION = "0.99.10"
 
 # 2. Commit + tag
 git add packages/core/src/version.ts
-git commit -m "release: v0.99.9"
-git tag v0.99.9
+git commit -m "release: v0.99.10"
+git tag v0.99.10
 git push origin develop --follow-tags
 
 # 3. Build
@@ -62,24 +120,24 @@ bun run --filter @codenexum/plugin bundle
 bun run --filter @codenexum/electron package
 
 # 4. Upload to GitHub
-gh release create v0.99.9 \
-  --title "v0.99.9" \
+gh release create v0.99.10 \
+  --title "v0.99.10" \
   --generate-notes \
   apps/electron/out/*
 ```
 
 `apps/electron/out/` will contain (per platform):
 
-- `CodeNexum-0.99.9`, `CodeNexum-0.99.9`, `latest-mac.yml`
+- `CodeNexum-0.99.10`, `CodeNexum-0.99.10`, `latest-mac.yml`
 - `CodeNexum-Setup.exe`, `latest.yml` (nsis)
-- `CodeNexum-0.99.9` (no feed entry — by design)
-- `CodeNexum-0.99.9`, `CodeNexum-0.99.9`, `latest-linux.yml`
+- `CodeNexum-0.99.10` (no feed entry — by design)
+- `CodeNexum-0.99.10`, `CodeNexum-0.99.10`, `latest-linux.yml`
 
 `gh release create` uploads everything in the glob. Electron-builder generated the `latest*.yml` files during `package` — no extra step.
 
 ### Marking the release as latest
 
-`gh release create` marks the release as "Latest" by default. Prereleases (e.g. `v0.99.9`) are tagged with `--prerelease` and won't trigger auto-update for stable users.
+`gh release create` marks the release as "Latest" by default. Prereleases (e.g. `v0.99.10`) are tagged with `--prerelease` and won't trigger auto-update for stable users.
 
 ## Smoke test
 
@@ -87,17 +145,17 @@ Before tagging a real release, validate the feed manually:
 
 1. Build a candidate locally and push it to a draft release:
    ```bash
-   gh release create v0.99.9 --prerelease --draft apps/electron/out/*
+   gh release create v0.99.10 --prerelease --draft apps/electron/out/*
    ```
-2. Install a previous stable build (e.g. v0.99.9) on a test machine. Launch it with:
+2. Install a previous stable build (e.g. v0.99.10) on a test machine. Launch it with:
    ```bash
-   CODENEXUM_UPDATE_FEED_URL=https://github.com/madKoding/codenexum/releases/expanded_assets/v0.99.9 \
+   CODENEXUM_UPDATE_FEED_URL=https://github.com/madKoding/codenexum/releases/expanded_assets/v0.99.10 \
      /Applications/CodeNexum.app/Contents/MacOS/CodeNexum
    ```
    (electron-updater does not consume this URL shape directly — see workaround below.)
-3. To force a feed override, publish the candidate as a non-prerelease tag (e.g. `v0.99.9`) and use:
+3. To force a feed override, publish the candidate as a non-prerelease tag (e.g. `v0.99.10`) and use:
    ```bash
-   CODENEXUM_UPDATE_FEED_URL='{"provider":"generic","url":"https://github.com/madKoding/codenexum/releases/download/v0.99.9"}' \
+   CODENEXUM_UPDATE_FEED_URL='{"provider":"generic","url":"https://github.com/madKoding/codenexum/releases/download/v0.99.10"}' \
      /Applications/CodeNexum.app/Contents/MacOS/CodeNexum
    ```
    (pass JSON in the env var; `UpdateManager` reads it as the `setFeedURL` arg — note: the current implementation passes the env as a string URL only; this requires a small adjustment if you need a JSON feed URL — see "Test feed override" below).
@@ -122,7 +180,7 @@ CODENEXUM_UPDATE_FEED_URL=http://127.0.0.1:8080/ \
 
 ## Rollback
 
-There is no native rollback. To revert a bad release, publish a hotfix version (e.g. `v0.99.9`) and yank the previous release's assets on GitHub (or mark as draft). Users on the bad version will receive the hotfix on next check.
+There is no native rollback. To revert a bad release, publish a hotfix version (e.g. `v0.99.10`) and yank the previous release's assets on GitHub (or mark as draft). Users on the bad version will receive the hotfix on next check.
 
 ## Known caveats
 

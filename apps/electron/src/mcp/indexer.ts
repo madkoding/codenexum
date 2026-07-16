@@ -78,14 +78,25 @@ export function parseFile(fp: string): Chunk[] {
   return p(readFileSync(fp, "utf-8"), fp)
 }
 
-export function indexProject(root: string, maxFiles = getMaxFiles()): { files: number; chunks: Chunk[]; fileHashes: Record<string, string>; edges: Edge[]; capped: boolean } {
+export type ProgressFn = (current: number, total: number, file: string) => void
+
+export function indexProject(
+  root: string,
+  maxFiles = getMaxFiles(),
+  onProgress?: ProgressFn,
+): { files: number; chunks: Chunk[]; fileHashes: Record<string, string>; edges: Edge[]; capped: boolean } {
   const files = walk(root, new Set(), maxFiles)
   const capped = files.length >= maxFiles
   const chunks: Chunk[] = []
   const fileHashes: Record<string, string> = {}
   const maxFileBytes = getMaxFileBytes()
+  const reportEvery = Math.max(50, Math.floor(files.length / 20))
+  let i = 0
   for (const fp of files) {
-    if (isGeneratedPath(fp) || isOversized(fp, maxFileBytes)) continue
+    if (isGeneratedPath(fp) || isOversized(fp, maxFileBytes)) {
+      i++
+      continue
+    }
     try {
       const content = readFileSync(fp, "utf-8")
       fileHashes[fp] = hash(content)
@@ -94,6 +105,10 @@ export function indexProject(root: string, maxFiles = getMaxFiles()): { files: n
       if (p) chunks.push(...p(content, fp))
     } catch {
       // skip unreadable files
+    }
+    i++
+    if (onProgress && (i % reportEvery === 0 || i === files.length)) {
+      try { onProgress(i, files.length, fp) } catch {}
     }
   }
   const edges = extractEdges(chunks)
