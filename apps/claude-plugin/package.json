@@ -6,7 +6,8 @@
   "main": "./dist/hook.js",
   "scripts": {
     "build": "tsc",
-    "bundle": "bun build ./dist/hook.js --target=node --format=esm --outfile=./dist/hook.mjs --external none"
+    "bundle": "bun build ./dist/hook.js --target=node --format=esm --outfile=./dist/hook.mjs --external none",
+    "session-report": "node scripts/session-report.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0"
