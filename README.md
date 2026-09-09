@@ -325,3 +325,6 @@ MIT.
 [See releases](https://github.com/madkoding/codenexum/releases)
 
 </div>
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=madkoding/codenexum&type=Date)](https://star-history.com/#madkoding/codenexum&Date)
