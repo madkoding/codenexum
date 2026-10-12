@@ -19,11 +19,11 @@ Triggers for `context_search` include: "find", "search", "lookup", "locate", "wh
 
 You can narrow results with prefixes:
 
-| Filter | Example | What it does |
-|---|---|---|
-| `type:` | `class:User` | Only symbols of that type |
+| Filter  | Example        | What it does                                 |
+| ------- | -------------- | -------------------------------------------- |
+| `type:` | `class:User`   | Only symbols of that type                    |
 | `file:` | `file:auth.ts` | Only symbols in files matching the substring |
-| `lang:` | `lang:ts` | Only symbols in TypeScript files |
+| `lang:` | `lang:ts`      | Only symbols in TypeScript files             |
 
 Filters can be combined with free text: `function:auth file:src`.
 
@@ -32,14 +32,15 @@ Filters can be combined with free text: `function:auth file:src`.
 The index also records lightweight relationships between symbols: imports, calls, extends, and implements. These are **heuristic, one-level links** — good for tracing a change, not a full code graph.
 
 Use them when the user asks:
+
 - "What uses this function?"
 - "If I change X, what breaks?"
 - "Where is this class extended?"
 
-| Tool | Description |
-|---|---|
-| `context_related file.ts:symbolName [n]` | Callers, callees, imports, extends, implements |
-| `context_impact ["file1.ts", "file2.ts"] [n]` | Files/symbols that depend on the given files |
+| Tool                                          | Description                                    |
+| --------------------------------------------- | ---------------------------------------------- |
+| `context_related file.ts:symbolName [n]`      | Callers, callees, imports, extends, implements |
+| `context_impact ["file1.ts", "file2.ts"] [n]` | Files/symbols that depend on the given files   |
 
 ### Example flow
 
@@ -70,26 +71,28 @@ Classify files into three tiers:
 3. **Rest of repo** (low detail) — everything else. Include only a one-line summary per file, unless the user specifically asks about it.
 
 When you detect the context is getting full:
+
 - Summarize low-detail files first
 - Then compress medium-detail files to signatures only
 - If still tight, strip docstrings and comments from active files
 
 ## Tools
 
-| Tool | Description |
-|---|---|
-| `context_analyze [path]` | Index a project (run once on first use, then auto-updates) |
+| Tool                                     | Description                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `context_analyze [path]`                 | Index a project (run once on first use, then auto-updates)                   |
 | `context_search <query> [n] [snippet=N]` | Search indexed code by keyword/phrase — **prefer this before reading files** |
-| `context_related file.ts:symbol [n]` | Show callers, callees, imports, extends, implements |
-| `context_impact ["file.ts"] [n]` | Files/symbols that depend on the given files |
-| `context_stats` | Show indexing statistics |
-| `context_dashboard` | Open the dashboard (Electron window) |
-| `context_read_snippet` | Get indexed snippet for a file instead of full read |
-| `context_search_snippet` | Compact grep/glob replacement |
+| `context_related file.ts:symbol [n]`     | Show callers, callees, imports, extends, implements                          |
+| `context_impact ["file.ts"] [n]`         | Files/symbols that depend on the given files                                 |
+| `context_stats`                          | Show indexing statistics                                                     |
+| `context_dashboard`                      | Open the dashboard (Electron window)                                         |
+| `context_read_snippet`                   | Get indexed snippet for a file instead of full read                          |
+| `context_search_snippet`                 | Compact grep/glob replacement                                                |
 
 ## Token Budget
 
 When context is limited, allocate tokens roughly:
+
 - 50%: active files (full code)
 - 30%: dependency signatures + current task reasoning
 - 20%: search results and summaries
@@ -99,6 +102,7 @@ When context is limited, allocate tokens roughly:
 Search results now include a body snippet and exact line range. **If the snippet is enough to answer the user's question, do not open the file.** This is the default mode and saves the most tokens.
 
 When to open the file:
+
 - The snippet is truncated mid-block or mid-function.
 - You need to see surrounding definitions or multiple related symbols.
 - The user explicitly asks for the full file or line range beyond the snippet.
@@ -106,6 +110,7 @@ When to open the file:
 ## Dashboard
 
 Run `context_dashboard` or open the Electron window to see:
+
 - Estimated tokens saved this session.
 - Searches, snippet-only answers, and files read.
 - Index status: chunks, files, edges, languages.
@@ -126,6 +131,7 @@ This ensures the subagent uses the index instead of native tools, even though it
 ## Guiding the User
 
 If context is getting tight:
+
 1. Tell the user which compression level you're applying
 2. Offer to run `context_analyze` if the project isn't indexed
 3. Suggest they focus on specific files if you keep hitting limits

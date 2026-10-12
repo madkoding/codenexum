@@ -1,709 +1,1053 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>CodeNexum — code index + context compression for opencode</title>
-<meta name="description" content="CodeNexum is a code indexer + context compression engine for opencode. Cuts tool output tokens by 40-80% with FTS5 search, semantic summaries, and live savings dashboard." />
-<meta property="og:title" content="CodeNexum — code index + context compression for opencode" />
-<meta property="og:description" content="Cuts tool output tokens by 40-80%. Free, open source, cross-platform." />
-<meta property="og:image" content="./assets/icon.png" />
-<meta name="theme-color" content="#0b0d10" />
-<link rel="icon" href="./assets/icon.png" />
-<style>
-  :root {
-    --bg: #0b0d10;
-    --bg-2: #0f1118;
-    --panel: #14171f;
-    --line: #1f2937;
-    --line-2: #27272a;
-    --text: #e6e9ef;
-    --text-dim: #8b92a8;
-    --muted: #5a6072;
-    --accent: #3b82f6;
-    --accent-bright: #60a5fa;
-    --accent-dim: rgba(59, 130, 246, 0.08);
-    --accent-glow: rgba(59, 130, 246, 0.35);
-    --good: #22c55e;
-    --warn: #f59e0b;
-    --cyan: #06b6d4;
-    --pink: #ec4899;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-    font-feature-settings: "ss01", "cv11";
-  }
-  .mono {
-    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-feature-settings: "calt" 0;
-  }
-  a { color: var(--accent-bright); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  code {
-    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    background: var(--panel);
-    padding: 0.1em 0.4em;
-    border-radius: 4px;
-    font-size: 0.88em;
-    border: 1px solid var(--line);
-    color: var(--accent-bright);
-  }
-  pre {
-    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    background: var(--bg-2);
-    padding: 1.25rem;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    overflow-x: auto;
-    line-height: 1.55;
-    font-size: 0.82rem;
-    margin: 0;
-  }
-  pre code { padding: 0; border: 0; background: transparent; color: var(--text); }
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CodeNexum — code index + context compression for opencode</title>
+    <meta
+      name="description"
+      content="CodeNexum is a code indexer + context compression engine for opencode. Cuts tool output tokens by 40-80% with FTS5 search, semantic summaries, and live savings dashboard."
+    />
+    <meta
+      property="og:title"
+      content="CodeNexum — code index + context compression for opencode"
+    />
+    <meta
+      property="og:description"
+      content="Cuts tool output tokens by 40-80%. Free, open source, cross-platform."
+    />
+    <meta property="og:image" content="./assets/icon.png" />
+    <meta name="theme-color" content="#0b0d10" />
+    <link rel="icon" href="./assets/icon.png" />
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --bg-2: #0f1118;
+        --panel: #14171f;
+        --line: #1f2937;
+        --line-2: #27272a;
+        --text: #e6e9ef;
+        --text-dim: #8b92a8;
+        --muted: #5a6072;
+        --accent: #3b82f6;
+        --accent-bright: #60a5fa;
+        --accent-dim: rgba(59, 130, 246, 0.08);
+        --accent-glow: rgba(59, 130, 246, 0.35);
+        --good: #22c55e;
+        --warn: #f59e0b;
+        --cyan: #06b6d4;
+        --pink: #ec4899;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          "Inter",
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        font-feature-settings: "ss01", "cv11";
+      }
+      .mono {
+        font-family:
+          "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-feature-settings: "calt" 0;
+      }
+      a {
+        color: var(--accent-bright);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      code {
+        font-family:
+          "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        background: var(--panel);
+        padding: 0.1em 0.4em;
+        border-radius: 4px;
+        font-size: 0.88em;
+        border: 1px solid var(--line);
+        color: var(--accent-bright);
+      }
+      pre {
+        font-family:
+          "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        background: var(--bg-2);
+        padding: 1.25rem;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        overflow-x: auto;
+        line-height: 1.55;
+        font-size: 0.82rem;
+        margin: 0;
+      }
+      pre code {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+      }
 
-  /* Grid overlay for tech feel */
-  .grid-bg {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    background-image:
-      linear-gradient(rgba(45, 212, 191, 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(45, 212, 191, 0.025) 1px, transparent 1px);
-    background-size: 64px 64px;
-    mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 30%, transparent 80%);
-    -webkit-mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 30%, transparent 80%);
-  }
-  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 2rem; position: relative; z-index: 1; }
+      /* Grid overlay for tech feel */
+      .grid-bg {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(45, 212, 191, 0.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(45, 212, 191, 0.025) 1px, transparent 1px);
+        background-size: 64px 64px;
+        mask-image: radial-gradient(
+          ellipse 80% 50% at 50% 0%,
+          black 30%,
+          transparent 80%
+        );
+        -webkit-mask-image: radial-gradient(
+          ellipse 80% 50% at 50% 0%,
+          black 30%,
+          transparent 80%
+        );
+      }
+      .wrap {
+        max-width: 1140px;
+        margin: 0 auto;
+        padding: 0 2rem;
+        position: relative;
+        z-index: 1;
+      }
 
-  /* Nav */
-  nav {
-    padding: 1.5rem 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--line);
-  }
-  .nav-brand {
-    display: flex; align-items: center; gap: 0.6rem;
-    font-weight: 700; font-size: 1rem; letter-spacing: -0.01em;
-  }
-  .nav-brand img { width: 28px; height: 28px; }
-  .nav-links { display: flex; gap: 1.75rem; font-size: 0.88rem; }
-  .nav-links a { color: var(--text-dim); }
-  .nav-links a:hover { color: var(--text); text-decoration: none; }
+      /* Nav */
+      nav {
+        padding: 1.5rem 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-weight: 700;
+        font-size: 1rem;
+        letter-spacing: -0.01em;
+      }
+      .nav-brand img {
+        width: 28px;
+        height: 28px;
+      }
+      .nav-links {
+        display: flex;
+        gap: 1.75rem;
+        font-size: 0.88rem;
+      }
+      .nav-links a {
+        color: var(--text-dim);
+      }
+      .nav-links a:hover {
+        color: var(--text);
+        text-decoration: none;
+      }
 
-  /* Hero */
-  .hero {
-    padding: 6rem 0 5rem;
-    position: relative;
-  }
-  .hero-tag {
-    display: inline-flex; align-items: center; gap: 0.5rem;
-    padding: 0.35rem 0.85rem;
-    border: 1px solid var(--line);
-    border-radius: 100px;
-    font-size: 0.78rem;
-    color: var(--text-dim);
-    background: var(--bg-2);
-    margin-bottom: 2rem;
-  }
-  .hero-tag .dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent-glow);
-    animation: pulse 2s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-  .hero h1 {
-    font-size: clamp(2.8rem, 6vw, 4.5rem);
-    margin: 0 0 1.25rem;
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 1.05;
-  }
-  .hero h1 .accent {
-    background: linear-gradient(135deg, var(--accent) 0%, #93c5fd 50%, var(--accent-bright) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    font-style: italic;
-    font-weight: 700;
-  }
-  .hero .lede {
-    font-size: 1.2rem;
-    max-width: 620px;
-    color: var(--text-dim);
-    margin: 0 0 2.5rem;
-    line-height: 1.55;
-  }
-  .hero .lede strong { color: var(--text); font-weight: 500; }
-  .cta { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 0.5rem;
-    padding: 0.75rem 1.25rem; border-radius: 8px;
-    font-weight: 500; font-size: 0.9rem;
-    border: 1px solid var(--line);
-    background: transparent; color: var(--text);
-    transition: all 0.15s ease;
-    cursor: pointer;
-    font-family: inherit;
-  }
-  .btn:hover { background: var(--panel); border-color: var(--accent); text-decoration: none; }
-  .btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #ffffff;
-    font-weight: 600;
-  }
-  .btn.primary:hover {
-    background: var(--accent-bright);
-    border-color: var(--accent-bright);
-    box-shadow: 0 0 24px var(--accent-glow);
-  }
-  .btn svg { width: 16px; height: 16px; }
-  .btn .kbd {
-    font-family: ui-monospace, monospace;
-    font-size: 0.7rem;
-    padding: 0.1em 0.4em;
-    background: rgba(0,0,0,0.2);
-    border-radius: 3px;
-    margin-left: 0.25rem;
-  }
+      /* Hero */
+      .hero {
+        padding: 6rem 0 5rem;
+        position: relative;
+      }
+      .hero-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.35rem 0.85rem;
+        border: 1px solid var(--line);
+        border-radius: 100px;
+        font-size: 0.78rem;
+        color: var(--text-dim);
+        background: var(--bg-2);
+        margin-bottom: 2rem;
+      }
+      .hero-tag .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 8px var(--accent-glow);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      .hero h1 {
+        font-size: clamp(2.8rem, 6vw, 4.5rem);
+        margin: 0 0 1.25rem;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        line-height: 1.05;
+      }
+      .hero h1 .accent {
+        background: linear-gradient(
+          135deg,
+          var(--accent) 0%,
+          #93c5fd 50%,
+          var(--accent-bright) 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-style: italic;
+        font-weight: 700;
+      }
+      .hero .lede {
+        font-size: 1.2rem;
+        max-width: 620px;
+        color: var(--text-dim);
+        margin: 0 0 2.5rem;
+        line-height: 1.55;
+      }
+      .hero .lede strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .cta {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 500;
+        font-size: 0.9rem;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--text);
+        transition: all 0.15s ease;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .btn:hover {
+        background: var(--panel);
+        border-color: var(--accent);
+        text-decoration: none;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #ffffff;
+        font-weight: 600;
+      }
+      .btn.primary:hover {
+        background: var(--accent-bright);
+        border-color: var(--accent-bright);
+        box-shadow: 0 0 24px var(--accent-glow);
+      }
+      .btn svg {
+        width: 16px;
+        height: 16px;
+      }
+      .btn .kbd {
+        font-family: ui-monospace, monospace;
+        font-size: 0.7rem;
+        padding: 0.1em 0.4em;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 3px;
+        margin-left: 0.25rem;
+      }
 
-  /* Terminal demo */
-  .terminal {
-    margin-top: 4rem;
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(45,212,191,0.05);
-  }
-  .terminal-bar {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    background: var(--panel);
-    border-bottom: 1px solid var(--line);
-  }
-  .terminal-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: #2a2d36; }
-  .terminal-bar .dot:nth-child(1) { background: #ff5f57; }
-  .terminal-bar .dot:nth-child(2) { background: #febc2e; }
-  .terminal-bar .dot:nth-child(3) { background: #28c840; }
-  .terminal-bar .title {
-    margin-left: auto; margin-right: auto;
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-    color: var(--muted);
-  }
-  .terminal-body {
-    padding: 1.5rem;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.85rem;
-    line-height: 1.7;
-    color: var(--text-dim);
-  }
-  .terminal-body .prompt { color: var(--accent); }
-  .terminal-body .path { color: #60a5fa; }
-  .terminal-body .flag { color: #fbbf24; }
-  .terminal-body .string { color: #a5d6ff; }
-  .terminal-body .comment { color: var(--muted); }
-  .terminal-body .dim { color: var(--muted); }
-  .terminal-body .ok { color: #4ade80; }
-  .terminal-body .stats {
-    display: inline-block;
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--panel);
-    border-left: 2px solid var(--accent);
-    border-radius: 0 4px 4px 0;
-    color: var(--text);
-  }
-  .terminal-body .stats b { color: var(--accent-bright); }
+      /* Terminal demo */
+      .terminal {
+        margin-top: 4rem;
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow:
+          0 20px 60px rgba(0, 0, 0, 0.4),
+          0 0 0 1px rgba(45, 212, 191, 0.05);
+      }
+      .terminal-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .terminal-bar .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #2a2d36;
+      }
+      .terminal-bar .dot:nth-child(1) {
+        background: #ff5f57;
+      }
+      .terminal-bar .dot:nth-child(2) {
+        background: #febc2e;
+      }
+      .terminal-bar .dot:nth-child(3) {
+        background: #28c840;
+      }
+      .terminal-bar .title {
+        margin-left: auto;
+        margin-right: auto;
+        font-family: ui-monospace, monospace;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .terminal-body {
+        padding: 1.5rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.85rem;
+        line-height: 1.7;
+        color: var(--text-dim);
+      }
+      .terminal-body .prompt {
+        color: var(--accent);
+      }
+      .terminal-body .path {
+        color: #60a5fa;
+      }
+      .terminal-body .flag {
+        color: #fbbf24;
+      }
+      .terminal-body .string {
+        color: #a5d6ff;
+      }
+      .terminal-body .comment {
+        color: var(--muted);
+      }
+      .terminal-body .dim {
+        color: var(--muted);
+      }
+      .terminal-body .ok {
+        color: #4ade80;
+      }
+      .terminal-body .stats {
+        display: inline-block;
+        margin-top: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        background: var(--panel);
+        border-left: 2px solid var(--accent);
+        border-radius: 0 4px 4px 0;
+        color: var(--text);
+      }
+      .terminal-body .stats b {
+        color: var(--accent-bright);
+      }
 
-  /* Section base */
-  section { padding: 6rem 0; position: relative; }
-  .section-head {
-    display: flex; align-items: baseline; gap: 1rem;
-    margin-bottom: 3rem;
-  }
-  .section-head .num {
-    font-family: ui-monospace, monospace;
-    color: var(--accent);
-    font-size: 0.85rem;
-    font-weight: 500;
-  }
-  .section-head h2 {
-    font-size: clamp(1.8rem, 3vw, 2.4rem);
-    margin: 0;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-  }
-  .section-head .sub {
-    color: var(--text-dim);
-    font-size: 0.95rem;
-    margin-left: auto;
-    max-width: 360px;
-    text-align: right;
-  }
+      /* Section base */
+      section {
+        padding: 6rem 0;
+        position: relative;
+      }
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        gap: 1rem;
+        margin-bottom: 3rem;
+      }
+      .section-head .num {
+        font-family: ui-monospace, monospace;
+        color: var(--accent);
+        font-size: 0.85rem;
+        font-weight: 500;
+      }
+      .section-head h2 {
+        font-size: clamp(1.8rem, 3vw, 2.4rem);
+        margin: 0;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .section-head .sub {
+        color: var(--text-dim);
+        font-size: 0.95rem;
+        margin-left: auto;
+        max-width: 360px;
+        text-align: right;
+      }
 
-  /* Two-col layout */
-  .two-col {
-    display: grid;
-    grid-template-columns: 1.2fr 1fr;
-    gap: 4rem;
-    align-items: start;
-  }
-  .two-col p { color: var(--text-dim); font-size: 1.02rem; margin: 0 0 1rem; }
-  .two-col p strong { color: var(--text); font-weight: 500; }
-  .pull-stat {
-    border-left: 2px solid var(--accent);
-    padding-left: 1.5rem;
-    margin: 2rem 0;
-  }
-  .pull-stat .v {
-    font-size: 3rem; font-weight: 800; color: var(--text);
-    letter-spacing: -0.03em; line-height: 1;
-    font-variant-numeric: tabular-nums;
-  }
-  .pull-stat .l {
-    color: var(--text-dim); font-size: 0.9rem; margin-top: 0.5rem;
-  }
+      /* Two-col layout */
+      .two-col {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 4rem;
+        align-items: start;
+      }
+      .two-col p {
+        color: var(--text-dim);
+        font-size: 1.02rem;
+        margin: 0 0 1rem;
+      }
+      .two-col p strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .pull-stat {
+        border-left: 2px solid var(--accent);
+        padding-left: 1.5rem;
+        margin: 2rem 0;
+      }
+      .pull-stat .v {
+        font-size: 3rem;
+        font-weight: 800;
+        color: var(--text);
+        letter-spacing: -0.03em;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+      .pull-stat .l {
+        color: var(--text-dim);
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+      }
 
-  /* Features as a list */
-  .feat-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1px;
-    background: var(--line);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  .feat {
-    background: var(--bg);
-    padding: 1.75rem;
-    transition: background 0.15s;
-    position: relative;
-  }
-  .feat:hover { background: var(--bg-2); }
-  .feat-icon {
-    width: 32px; height: 32px;
-    margin-bottom: 1rem;
-    color: var(--accent);
-  }
-  .feat-icon svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.5; }
-  .feat h3 {
-    font-size: 0.98rem;
-    font-weight: 600;
-    margin: 0 0 0.4rem;
-    letter-spacing: -0.01em;
-  }
-  .feat p {
-    color: var(--text-dim);
-    font-size: 0.88rem;
-    margin: 0;
-    line-height: 1.55;
-  }
-  .feat p code { font-size: 0.8em; }
+      /* Features as a list */
+      .feat-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .feat {
+        background: var(--bg);
+        padding: 1.75rem;
+        transition: background 0.15s;
+        position: relative;
+      }
+      .feat:hover {
+        background: var(--bg-2);
+      }
+      .feat-icon {
+        width: 32px;
+        height: 32px;
+        margin-bottom: 1rem;
+        color: var(--accent);
+      }
+      .feat-icon svg {
+        width: 100%;
+        height: 100%;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.5;
+      }
+      .feat h3 {
+        font-size: 0.98rem;
+        font-weight: 600;
+        margin: 0 0 0.4rem;
+        letter-spacing: -0.01em;
+      }
+      .feat p {
+        color: var(--text-dim);
+        font-size: 0.88rem;
+        margin: 0;
+        line-height: 1.55;
+      }
+      .feat p code {
+        font-size: 0.8em;
+      }
 
-  /* Steps */
-  .steps {
-    display: grid;
-    gap: 2rem;
-    counter-reset: step;
-  }
-  .step {
-    display: grid;
-    grid-template-columns: 3rem 1fr;
-    gap: 1.5rem;
-    padding: 1.5rem 0;
-    border-top: 1px solid var(--line);
-  }
-  .step:last-child { border-bottom: 1px solid var(--line); }
-  .step-num {
-    font-family: ui-monospace, monospace;
-    color: var(--accent);
-    font-size: 0.85rem;
-    font-weight: 500;
-    padding-top: 0.15rem;
-  }
-  .step h3 {
-    margin: 0 0 0.5rem;
-    font-size: 1.15rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-  .step p {
-    color: var(--text-dim);
-    margin: 0 0 0.75rem;
-    font-size: 0.95rem;
-  }
+      /* Steps */
+      .steps {
+        display: grid;
+        gap: 2rem;
+        counter-reset: step;
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 3rem 1fr;
+        gap: 1.5rem;
+        padding: 1.5rem 0;
+        border-top: 1px solid var(--line);
+      }
+      .step:last-child {
+        border-bottom: 1px solid var(--line);
+      }
+      .step-num {
+        font-family: ui-monospace, monospace;
+        color: var(--accent);
+        font-size: 0.85rem;
+        font-weight: 500;
+        padding-top: 0.15rem;
+      }
+      .step h3 {
+        margin: 0 0 0.5rem;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .step p {
+        color: var(--text-dim);
+        margin: 0 0 0.75rem;
+        font-size: 0.95rem;
+      }
 
-  /* Download */
-  .dl-groups {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.25rem;
-    margin-top: 2.5rem;
-  }
-  .dl-group {
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 1.5rem 1.5rem 1.25rem;
-  }
-  .dl-group-head {
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--accent);
-    font-weight: 600;
-    margin-bottom: 0.85rem;
-  }
-  .dl-group-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .dl {
-    background: transparent;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 0.85rem 1rem;
-    text-align: left;
-    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    color: var(--text);
-  }
-  .dl:hover {
-    border-color: var(--accent);
-    background: var(--bg);
-    transform: translateY(-1px);
-    text-decoration: none;
-  }
-  .dl:hover .dl-cta { color: var(--accent-bright); }
-  .dl:hover .dl-cta svg { transform: translateX(3px); }
-  .dl-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    min-width: 0;
-  }
-  .dl-meta-name {
-    font-weight: 500;
-    font-size: 0.95rem;
-  }
-  .dl-meta-sub {
-    font-family: ui-monospace, monospace;
-    font-size: 0.74rem;
-    color: var(--text-dim);
-  }
-  .dl-cta {
-    color: var(--accent);
-    font-size: 0.85rem;
-    font-weight: 500;
-    display: flex; align-items: center; gap: 0.35rem;
-    transition: color 0.2s ease;
-  }
-  .dl-cta svg {
-    width: 14px; height: 14px;
-    transition: transform 0.2s ease;
-  }
-  @media (max-width: 900px) {
-    .dl-groups { grid-template-columns: 1fr; }
-  }
+      /* Download */
+      .dl-groups {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.25rem;
+        margin-top: 2.5rem;
+      }
+      .dl-group {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 1.5rem 1.5rem 1.25rem;
+      }
+      .dl-group-head {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        font-weight: 600;
+        margin-bottom: 0.85rem;
+      }
+      .dl-group-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .dl {
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.85rem 1rem;
+        text-align: left;
+        transition:
+          border-color 0.2s ease,
+          background 0.2s ease,
+          transform 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        color: var(--text);
+      }
+      .dl:hover {
+        border-color: var(--accent);
+        background: var(--bg);
+        transform: translateY(-1px);
+        text-decoration: none;
+      }
+      .dl:hover .dl-cta {
+        color: var(--accent-bright);
+      }
+      .dl:hover .dl-cta svg {
+        transform: translateX(3px);
+      }
+      .dl-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+        min-width: 0;
+      }
+      .dl-meta-name {
+        font-weight: 500;
+        font-size: 0.95rem;
+      }
+      .dl-meta-sub {
+        font-family: ui-monospace, monospace;
+        font-size: 0.74rem;
+        color: var(--text-dim);
+      }
+      .dl-cta {
+        color: var(--accent);
+        font-size: 0.85rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        transition: color 0.2s ease;
+      }
+      .dl-cta svg {
+        width: 14px;
+        height: 14px;
+        transition: transform 0.2s ease;
+      }
+      @media (max-width: 900px) {
+        .dl-groups {
+          grid-template-columns: 1fr;
+        }
+      }
 
-  /* macOS gatekeeper note */
-  .mac-note {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    padding: 1.25rem 1.5rem;
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--warn);
-    border-radius: 8px;
-  }
-  .mac-note-icon {
-    flex-shrink: 0;
-    color: var(--warn);
-    width: 20px; height: 20px;
-    margin-top: 0.1rem;
-  }
-  .mac-note-icon svg { width: 100%; height: 100%; }
-  .mac-note strong {
-    display: block;
-    color: var(--text);
-    font-size: 0.92rem;
-    font-weight: 600;
-    margin-bottom: 0.35rem;
-  }
-  .mac-note p {
-    margin: 0;
-    color: var(--text-dim);
-    font-size: 0.88rem;
-    line-height: 1.55;
-  }
-  .mac-note code {
-    font-size: 0.82em;
-  }
+      /* macOS gatekeeper note */
+      .mac-note {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1.5rem;
+        padding: 1.25rem 1.5rem;
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--warn);
+        border-radius: 8px;
+      }
+      .mac-note-icon {
+        flex-shrink: 0;
+        color: var(--warn);
+        width: 20px;
+        height: 20px;
+        margin-top: 0.1rem;
+      }
+      .mac-note-icon svg {
+        width: 100%;
+        height: 100%;
+      }
+      .mac-note strong {
+        display: block;
+        color: var(--text);
+        font-size: 0.92rem;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+      .mac-note p {
+        margin: 0;
+        color: var(--text-dim);
+        font-size: 0.88rem;
+        line-height: 1.55;
+      }
+      .mac-note code {
+        font-size: 0.82em;
+      }
 
-  /* Worth it */
-  .worth {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 3rem;
-  }
-  .worth-col h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 1.25rem;
-    display: flex; align-items: center; gap: 0.5rem;
-  }
-  .worth-col.good h3 { color: #4ade80; }
-  .worth-col.bad h3 { color: #fbbf24; }
-  .worth-col ul {
-    list-style: none; padding: 0; margin: 0;
-  }
-  .worth-col li {
-    padding: 0.75rem 0;
-    border-top: 1px solid var(--line);
-    color: var(--text-dim);
-    font-size: 0.95rem;
-  }
-  .worth-col li:last-child { border-bottom: 1px solid var(--line); }
-  .worth-col li strong { color: var(--text); font-weight: 500; display: block; }
+      /* Worth it */
+      .worth {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3rem;
+      }
+      .worth-col h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .worth-col.good h3 {
+        color: #4ade80;
+      }
+      .worth-col.bad h3 {
+        color: #fbbf24;
+      }
+      .worth-col ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .worth-col li {
+        padding: 0.75rem 0;
+        border-top: 1px solid var(--line);
+        color: var(--text-dim);
+        font-size: 0.95rem;
+      }
+      .worth-col li:last-child {
+        border-bottom: 1px solid var(--line);
+      }
+      .worth-col li strong {
+        color: var(--text);
+        font-weight: 500;
+        display: block;
+      }
 
-  /* Diagram */
-  .diagram-block {
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    overflow-x: auto;
-  }
+      /* Diagram */
+      .diagram-block {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        overflow-x: auto;
+      }
 
-  /* Footer */
-  footer {
-    padding: 4rem 0 3rem;
-    border-top: 1px solid var(--line);
-    margin-top: 4rem;
-  }
-  .footer-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
-    gap: 3rem;
-    margin-bottom: 3rem;
-  }
-  .footer-brand {
-    display: flex; align-items: center; gap: 0.6rem;
-    font-weight: 700; font-size: 1rem;
-    margin-bottom: 0.75rem;
-  }
-  .footer-brand img { width: 24px; height: 24px; }
-  .footer-desc { color: var(--text-dim); font-size: 0.9rem; max-width: 320px; }
-  .footer-col h4 {
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    margin: 0 0 1rem;
-    font-weight: 600;
-  }
-  .footer-col ul { list-style: none; padding: 0; margin: 0; }
-  .footer-col li { margin-bottom: 0.5rem; }
-  .footer-col a { color: var(--text-dim); font-size: 0.9rem; }
-  .footer-col a:hover { color: var(--text); text-decoration: none; }
-  .footer-bottom {
-    padding-top: 2rem;
-    border-top: 1px solid var(--line);
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 0.82rem;
-    color: var(--muted);
-  }
-  .footer-bottom .mono { color: var(--text-dim); }
+      /* Footer */
+      footer {
+        padding: 4rem 0 3rem;
+        border-top: 1px solid var(--line);
+        margin-top: 4rem;
+      }
+      .footer-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
+        gap: 3rem;
+        margin-bottom: 3rem;
+      }
+      .footer-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-weight: 700;
+        font-size: 1rem;
+        margin-bottom: 0.75rem;
+      }
+      .footer-brand img {
+        width: 24px;
+        height: 24px;
+      }
+      .footer-desc {
+        color: var(--text-dim);
+        font-size: 0.9rem;
+        max-width: 320px;
+      }
+      .footer-col h4 {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 0 0 1rem;
+        font-weight: 600;
+      }
+      .footer-col ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .footer-col li {
+        margin-bottom: 0.5rem;
+      }
+      .footer-col a {
+        color: var(--text-dim);
+        font-size: 0.9rem;
+      }
+      .footer-col a:hover {
+        color: var(--text);
+        text-decoration: none;
+      }
+      .footer-bottom {
+        padding-top: 2rem;
+        border-top: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .footer-bottom .mono {
+        color: var(--text-dim);
+      }
 
-  @media (max-width: 800px) {
-    .two-col { grid-template-columns: 1fr; gap: 2rem; }
-    .feat-list { grid-template-columns: 1fr; }
-    .dl-groups { grid-template-columns: 1fr; }
-    .worth { grid-template-columns: 1fr; gap: 2rem; }
-    .footer-grid { grid-template-columns: 1fr; gap: 2rem; }
-    .section-head { flex-direction: column; align-items: flex-start; }
-    .section-head .sub { text-align: left; margin-left: 0; }
-  }
-</style>
-</head>
-<body>
+      @media (max-width: 800px) {
+        .two-col {
+          grid-template-columns: 1fr;
+          gap: 2rem;
+        }
+        .feat-list {
+          grid-template-columns: 1fr;
+        }
+        .dl-groups {
+          grid-template-columns: 1fr;
+        }
+        .worth {
+          grid-template-columns: 1fr;
+          gap: 2rem;
+        }
+        .footer-grid {
+          grid-template-columns: 1fr;
+          gap: 2rem;
+        }
+        .section-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .section-head .sub {
+          text-align: left;
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid-bg"></div>
 
-<div class="grid-bg"></div>
+    <div class="wrap">
+      <nav>
+        <div class="nav-brand">
+          <img src="./assets/icon.png" alt="" />
+          <span>CodeNexum</span>
+        </div>
+        <div class="nav-links">
+          <a href="#how">How it works</a>
+          <a href="#download">Download</a>
+          <a href="https://github.com/madkoding/codenexum">GitHub</a>
+        </div>
+      </nav>
 
-<div class="wrap">
+      <header class="hero">
+        <div class="hero-tag">
+          <span class="dot"></span>
+          <span>v0.99.10 — out now</span>
+        </div>
+        <h1>
+          Compress your<br />
+          <span class="accent">agent's context.</span>
+        </h1>
+        <p class="lede">
+          CodeNexum is a local code indexer and tool-output compressor for
+          <a href="https://opencode.ai">opencode</a>. It intercepts noisy reads
+          and greps, returns indexed snippets, and
+          <strong>cuts 40-80% of your token bill</strong> without losing
+          accuracy.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="#download">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"
+              />
+            </svg>
+            Download
+          </a>
+          <a class="btn" href="https://github.com/madkoding/codenexum">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1.1 1.9 2.9 1.4 3.6 1 .1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"
+              />
+            </svg>
+            Star on GitHub
+          </a>
+        </div>
 
-<nav>
-  <div class="nav-brand">
-    <img src="./assets/icon.png" alt="" />
-    <span>CodeNexum</span>
-  </div>
-  <div class="nav-links">
-    <a href="#how">How it works</a>
-    <a href="#download">Download</a>
-    <a href="https://github.com/madkoding/codenexum">GitHub</a>
-  </div>
-</nav>
+        <div class="terminal">
+          <div class="terminal-bar">
+            <span class="dot"></span><span class="dot"></span
+            ><span class="dot"></span>
+            <span class="title mono">~/projects/opencode-codenexum</span>
+          </div>
+          <div class="terminal-body">
+            <div>
+              <span class="prompt">$</span> <span>opencode</span>
+              <span class="flag">--task</span>
+              <span class="string">"find all callers of authenticate()"</span>
+            </div>
+            <div class="dim">
+              Reading 4 files... indexed locally via CodeNexum
+            </div>
+            <div>
+              <span class="ok">✓</span> <span>ctx_search</span>
+              <span class="dim">→</span> <span>3 callers in 12ms</span>
+            </div>
+            <div>
+              <span class="ok">✓</span> <span>ctx_related</span>
+              <span class="dim">→</span> <span>authenticate</span>
+              <span class="dim">→</span> <span>auth.ts:24</span>
+            </div>
+            <div>
+              <div class="stats">
+                <span>Token usage this turn: </span><b>1,247</b
+                ><span> of ~6,800 raw &middot; saved </span><b>82%</b>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
 
-<header class="hero">
-  <div class="hero-tag">
-    <span class="dot"></span>
-    <span>v0.99.10 — out now</span>
-  </div>
-  <h1>
-    Compress your<br/>
-    <span class="accent">agent's context.</span>
-  </h1>
-  <p class="lede">
-    CodeNexum is a local code indexer and tool-output compressor for
-    <a href="https://opencode.ai">opencode</a>.
-    It intercepts noisy reads and greps, returns indexed snippets, and
-    <strong>cuts 40-80% of your token bill</strong> without losing accuracy.
-  </p>
-  <div class="cta">
-    <a class="btn primary" href="#download">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-      Download
-    </a>
-    <a class="btn" href="https://github.com/madkoding/codenexum">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1.1 1.9 2.9 1.4 3.6 1 .1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
-      Star on GitHub
-    </a>
-  </div>
+      <section>
+        <div class="section-head">
+          <span class="num">01</span>
+          <h2>The problem</h2>
+          <span class="sub"
+            >Agents get buried under noise. The signal is in there,
+            somewhere.</span
+          >
+        </div>
+        <div class="two-col">
+          <div>
+            <p>
+              When your agent explores a repo, every <code>read</code>,
+              <code>grep</code>, and <code>bash</code> call returns a wall of
+              text. A typical test log is 800 lines. A noisy grep can hit
+              4,000+. The model pays for every token — and most of those tokens
+              are noise that never gets read.
+            </p>
+            <p>
+              CodeNexum sits at the tool boundary. It sees what the model is
+              about to read, checks if there's a better representation in the
+              local index, and substitutes a structured snippet when it's
+              smaller. The model gets the <strong>signal</strong>. You stop
+              paying for the noise.
+            </p>
+          </div>
+          <div>
+            <div class="pull-stat">
+              <div class="v">~70%</div>
+              <div class="l">
+                of tool-output tokens are noise that never gets used
+              </div>
+            </div>
+            <div class="pull-stat">
+              <div class="v">12ms</div>
+              <div class="l">
+                median substitution lookup against the local FTS5 index
+              </div>
+            </div>
+            <div class="pull-stat">
+              <div class="v">0</div>
+              <div class="l">
+                round-trips to the cloud — everything stays on your machine
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-  <div class="terminal">
-    <div class="terminal-bar">
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      <span class="title mono">~/projects/opencode-codenexum</span>
-    </div>
-    <div class="terminal-body">
-<div><span class="prompt">$</span> <span>opencode</span> <span class="flag">--task</span> <span class="string">"find all callers of authenticate()"</span></div>
-<div class="dim">  Reading 4 files... indexed locally via CodeNexum</div>
-<div><span class="ok">✓</span> <span>ctx_search</span> <span class="dim">→</span> <span>3 callers in 12ms</span></div>
-<div><span class="ok">✓</span> <span>ctx_related</span> <span class="dim">→</span> <span>authenticate</span> <span class="dim">→</span> <span>auth.ts:24</span></div>
-<div>
-<div class="stats">
-  <span>Token usage this turn: </span><b>1,247</b><span> of ~6,800 raw &middot; saved </span><b>82%</b>
-</div>
-</div>
-    </div>
-  </div>
-</header>
+      <section id="how">
+        <div class="section-head">
+          <span class="num">02</span>
+          <h2>What you get</h2>
+          <span class="sub"
+            >Every feature ships enabled. No config to start saving.</span
+          >
+        </div>
+        <div class="feat-list">
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 7V4h16v3M9 20h6M12 4v16" />
+              </svg>
+            </div>
+            <h3>FTS5 + BM25 index</h3>
+            <p>
+              Local SQLite, sub-millisecond search. Your code becomes
+              <em>searchable</em>, not just readable.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+                />
+              </svg>
+            </div>
+            <h3>Semantic summaries</h3>
+            <p>
+              800-line test log collapses to <code>8 passed, 3 failed</code>.
+              The model learns what it needs.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <path d="M11 4H4v7M13 20h7v-7M3 21l7-7M21 3l-7 7" />
+              </svg>
+            </div>
+            <h3>Smart compression</h3>
+            <p>
+              Strip ANSI, collapse repeated lines, trim stack indent. The
+              details that cost tokens and add nothing.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"
+                />
+              </svg>
+            </div>
+            <h3>Snippet substitution</h3>
+            <p>
+              <code>read foo.ts</code> returns indexed symbols (functions,
+              classes) instead of the whole file.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8M21 21l-4.35-4.35" />
+              </svg>
+            </div>
+            <h3>Indexed grep/glob</h3>
+            <p>
+              Search the real code, not your filesystem. Loop-detection stops
+              repeat reads cold.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+              </svg>
+            </div>
+            <h3>Callers and impact</h3>
+            <p>
+              Ask "who uses this?" and get the list instantly. No manual
+              navigation through 40 files.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <rect x="2" y="2" width="20" height="8" rx="2" />
+                <rect x="2" y="14" width="20" height="8" rx="2" />
+                <circle cx="6" cy="6" r="1" fill="currentColor" />
+                <circle cx="6" cy="18" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <h3>Smart cache</h3>
+            <p>
+              In-memory + on-disk. Repeated reads cost nothing. Survives across
+              sessions.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="feat-icon">
+              <svg viewBox="0 0 24 24">
+                <path d="M18 20V10M12 20V4M6 20v-6" />
+              </svg>
+            </div>
+            <h3>Live dashboard</h3>
+            <p>
+              Tokens saved, top queries, hot files, index health. See exactly
+              where the savings come from.
+            </p>
+          </div>
+        </div>
+      </section>
 
-<section>
-  <div class="section-head">
-    <span class="num">01</span>
-    <h2>The problem</h2>
-    <span class="sub">Agents get buried under noise. The signal is in there, somewhere.</span>
-  </div>
-  <div class="two-col">
-    <div>
-      <p>
-        When your agent explores a repo, every <code>read</code>, <code>grep</code>, and
-        <code>bash</code> call returns a wall of text. A typical test log is 800 lines.
-        A noisy grep can hit 4,000+. The model pays for every token — and most of those
-        tokens are noise that never gets read.
-      </p>
-      <p>
-        CodeNexum sits at the tool boundary. It sees what the model is about to read,
-        checks if there's a better representation in the local index, and substitutes a
-        structured snippet when it's smaller. The model gets the <strong>signal</strong>.
-        You stop paying for the noise.
-      </p>
-    </div>
-    <div>
-      <div class="pull-stat">
-        <div class="v">~70%</div>
-        <div class="l">of tool-output tokens are noise that never gets used</div>
-      </div>
-      <div class="pull-stat">
-        <div class="v">12ms</div>
-        <div class="l">median substitution lookup against the local FTS5 index</div>
-      </div>
-      <div class="pull-stat">
-        <div class="v">0</div>
-        <div class="l">round-trips to the cloud — everything stays on your machine</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="how">
-  <div class="section-head">
-    <span class="num">02</span>
-    <h2>What you get</h2>
-    <span class="sub">Every feature ships enabled. No config to start saving.</span>
-  </div>
-  <div class="feat-list">
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg></div>
-      <h3>FTS5 + BM25 index</h3>
-      <p>Local SQLite, sub-millisecond search. Your code becomes <em>searchable</em>, not just readable.</p>
-    </div>
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
-      <h3>Semantic summaries</h3>
-      <p>800-line test log collapses to <code>8 passed, 3 failed</code>. The model learns what it needs.</p>
-    </div>
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M11 4H4v7M13 20h7v-7M3 21l7-7M21 3l-7 7"/></svg></div>
-      <h3>Smart compression</h3>
-      <p>Strip ANSI, collapse repeated lines, trim stack indent. The details that cost tokens and add nothing.</p>
-    </div>
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg></div>
-      <h3>Snippet substitution</h3>
-      <p><code>read foo.ts</code> returns indexed symbols (functions, classes) instead of the whole file.</p>
-    </div>
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8M21 21l-4.35-4.35"/></svg></div>
-      <h3>Indexed grep/glob</h3>
-      <p>Search the real code, not your filesystem. Loop-detection stops repeat reads cold.</p>
-    </div>
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-      <h3>Callers and impact</h3>
-      <p>Ask "who uses this?" and get the list instantly. No manual navigation through 40 files.</p>
-    </div>
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="18" r="1" fill="currentColor"/></svg></div>
-      <h3>Smart cache</h3>
-      <p>In-memory + on-disk. Repeated reads cost nothing. Survives across sessions.</p>
-    </div>
-    <div class="feat">
-      <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></div>
-      <h3>Live dashboard</h3>
-      <p>Tokens saved, top queries, hot files, index health. See exactly where the savings come from.</p>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="section-head">
-    <span class="num">03</span>
-    <h2>How it works</h2>
-    <span class="sub">A 120-line plugin on top of a local app. The interception loop is three steps.</span>
-  </div>
-  <div class="diagram-block">
-    <pre class="mermaid">
+      <section>
+        <div class="section-head">
+          <span class="num">03</span>
+          <h2>How it works</h2>
+          <span class="sub"
+            >A 120-line plugin on top of a local app. The interception loop is
+            three steps.</span
+          >
+        </div>
+        <div class="diagram-block">
+          <pre class="mermaid">
 sequenceDiagram
     participant U as User
     participant OC as opencode
@@ -722,220 +1066,360 @@ sequenceDiagram
     P-->>OC: substitute (smaller)
     P->>APP: log savings
     </pre>
-  </div>
-</section>
+        </div>
+      </section>
 
-<section id="download">
-  <div class="section-head">
-    <span class="num">04</span>
-    <h2>Download</h2>
-    <span class="sub">Free, MIT, runs locally. Auto-updates with an in-app modal.</span>
-  </div>
-  <div class="dl-groups">
-    <div class="dl-group">
-      <div class="dl-group-head">macOS</div>
-      <div class="dl-group-list">
-        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-arm64.dmg">
-          <div class="dl-meta">
-            <span class="dl-meta-name">Apple Silicon</span>
-            <span class="dl-meta-sub">arm64 · DMG</span>
+      <section id="download">
+        <div class="section-head">
+          <span class="num">04</span>
+          <h2>Download</h2>
+          <span class="sub"
+            >Free, MIT, runs locally. Auto-updates with an in-app modal.</span
+          >
+        </div>
+        <div class="dl-groups">
+          <div class="dl-group">
+            <div class="dl-group-head">macOS</div>
+            <div class="dl-group-list">
+              <a
+                class="dl"
+                href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-arm64.dmg"
+              >
+                <div class="dl-meta">
+                  <span class="dl-meta-name">Apple Silicon</span>
+                  <span class="dl-meta-sub">arm64 · DMG</span>
+                </div>
+                <span class="dl-cta">
+                  Download
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M5 12h14M13 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </a>
+              <a
+                class="dl"
+                href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-x64.dmg"
+              >
+                <div class="dl-meta">
+                  <span class="dl-meta-name">Intel</span>
+                  <span class="dl-meta-sub">x64 · DMG</span>
+                </div>
+                <span class="dl-cta">
+                  Download
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M5 12h14M13 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </a>
+            </div>
           </div>
-          <span class="dl-cta">
-            Download
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-          </span>
-        </a>
-        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-x64.dmg">
-          <div class="dl-meta">
-            <span class="dl-meta-name">Intel</span>
-            <span class="dl-meta-sub">x64 · DMG</span>
+          <div class="dl-group">
+            <div class="dl-group-head">Windows</div>
+            <div class="dl-group-list">
+              <a
+                class="dl"
+                href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-Setup.exe"
+              >
+                <div class="dl-meta">
+                  <span class="dl-meta-name">Installer</span>
+                  <span class="dl-meta-sub">x64 · NSIS · auto-update</span>
+                </div>
+                <span class="dl-cta">
+                  Download
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M5 12h14M13 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </a>
+              <a
+                class="dl"
+                href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-Portable.exe"
+              >
+                <div class="dl-meta">
+                  <span class="dl-meta-name">Portable</span>
+                  <span class="dl-meta-sub"
+                    >x64 · no install · manual update</span
+                  >
+                </div>
+                <span class="dl-cta">
+                  Download
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M5 12h14M13 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </a>
+            </div>
           </div>
-          <span class="dl-cta">
-            Download
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-          </span>
-        </a>
-      </div>
-    </div>
-    <div class="dl-group">
-      <div class="dl-group-head">Windows</div>
-      <div class="dl-group-list">
-        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-Setup.exe">
-          <div class="dl-meta">
-            <span class="dl-meta-name">Installer</span>
-            <span class="dl-meta-sub">x64 · NSIS · auto-update</span>
+          <div class="dl-group">
+            <div class="dl-group-head">Linux</div>
+            <div class="dl-group-list">
+              <a
+                class="dl"
+                href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-x86_64.AppImage"
+              >
+                <div class="dl-meta">
+                  <span class="dl-meta-name">AppImage x86_64</span>
+                  <span class="dl-meta-sub">Intel/AMD · auto-update</span>
+                </div>
+                <span class="dl-cta">
+                  Download
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M5 12h14M13 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </a>
+              <a
+                class="dl"
+                href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-arm64.AppImage"
+              >
+                <div class="dl-meta">
+                  <span class="dl-meta-name">AppImage arm64</span>
+                  <span class="dl-meta-sub"
+                    >Apple Silicon / ARM · auto-update</span
+                  >
+                </div>
+                <span class="dl-cta">
+                  Download
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M5 12h14M13 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </a>
+            </div>
           </div>
-          <span class="dl-cta">
-            Download
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-          </span>
-        </a>
-        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-Portable.exe">
-          <div class="dl-meta">
-            <span class="dl-meta-name">Portable</span>
-            <span class="dl-meta-sub">x64 · no install · manual update</span>
+        </div>
+        <div class="mac-note">
+          <div class="mac-note-icon">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
           </div>
-          <span class="dl-cta">
-            Download
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-          </span>
-        </a>
-      </div>
-    </div>
-    <div class="dl-group">
-      <div class="dl-group-head">Linux</div>
-      <div class="dl-group-list">
-        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-x86_64.AppImage">
-          <div class="dl-meta">
-            <span class="dl-meta-name">AppImage x86_64</span>
-            <span class="dl-meta-sub">Intel/AMD · auto-update</span>
+          <div>
+            <strong>macOS note</strong>
+            <p>
+              CodeNexum isn't signed with an Apple Developer ID yet, so
+              Gatekeeper will block the .dmg on first open. To run it: open the
+              .dmg, drag the app to Applications, then in Terminal run
+              <code>xattr -cr /Applications/CodeNexum.app</code> and launch it
+              normally. The app is open source — you can verify the build
+              yourself.
+            </p>
           </div>
-          <span class="dl-cta">
-            Download
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-          </span>
-        </a>
-        <a class="dl" href="https://github.com/madkoding/codenexum/releases/latest/download/CodeNexum-arm64.AppImage">
-          <div class="dl-meta">
-            <span class="dl-meta-name">AppImage arm64</span>
-            <span class="dl-meta-sub">Apple Silicon / ARM · auto-update</span>
-          </div>
-          <span class="dl-cta">
-            Download
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
-          </span>
-        </a>
-      </div>
-    </div>
-  </div>
-  <div class="mac-note">
-    <div class="mac-note-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-    </div>
-    <div>
-      <strong>macOS note</strong>
-      <p>CodeNexum isn't signed with an Apple Developer ID yet, so Gatekeeper will block the .dmg on first open. To run it: open the .dmg, drag the app to Applications, then in Terminal run <code>xattr -cr /Applications/CodeNexum.app</code> and launch it normally. The app is open source — you can verify the build yourself.</p>
-    </div>
-  </div>
-  <p style="text-align:center; color: var(--muted); font-size: 0.85rem; margin-top: 2rem; font-family: ui-monospace, monospace;">
-    <a href="https://github.com/madkoding/codenexum/releases">All releases</a> &middot; SHA256 included &middot; auto-update on launch
-  </p>
-</section>
+        </div>
+        <p
+          style="
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-top: 2rem;
+            font-family: ui-monospace, monospace;
+          "
+        >
+          <a href="https://github.com/madkoding/codenexum/releases"
+            >All releases</a
+          >
+          &middot; SHA256 included &middot; auto-update on launch
+        </p>
+      </section>
 
-<section>
-  <div class="section-head">
-    <span class="num">05</span>
-    <h2>Get started</h2>
-    <span class="sub">Three steps. Two minutes.</span>
-  </div>
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">01</div>
-      <div>
-        <h3>Install the app</h3>
-        <p>Open the downloaded file and launch CodeNexum. It runs in the background with a tray icon — no window pops up unless you click it.</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">02</div>
-      <div>
-        <h3>Add the plugin to opencode</h3>
-        <p>Drop the plugin into your <code>opencode.json</code>:</p>
-        <pre><code>{
+      <section>
+        <div class="section-head">
+          <span class="num">05</span>
+          <h2>Get started</h2>
+          <span class="sub">Three steps. Two minutes.</span>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">01</div>
+            <div>
+              <h3>Install the app</h3>
+              <p>
+                Open the downloaded file and launch CodeNexum. It runs in the
+                background with a tray icon — no window pops up unless you click
+                it.
+              </p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">02</div>
+            <div>
+              <h3>Add the plugin to opencode</h3>
+              <p>Drop the plugin into your <code>opencode.json</code>:</p>
+              <pre><code>{
   "plugins": ["@codenexum/plugin"]
 }</code></pre>
-        <p>Restart opencode. The plugin auto-discovers the app on the local network.</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">03</div>
-      <div>
-        <h3>Watch the savings</h3>
-        <p>Open the CodeNexum window to see live metrics: tokens saved per session, top queries, hot files, and the index health of every registered project.</p>
-      </div>
-    </div>
-  </div>
-</section>
+              <p>
+                Restart opencode. The plugin auto-discovers the app on the local
+                network.
+              </p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">03</div>
+            <div>
+              <h3>Watch the savings</h3>
+              <p>
+                Open the CodeNexum window to see live metrics: tokens saved per
+                session, top queries, hot files, and the index health of every
+                registered project.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-<section>
-  <div class="section-head">
-    <span class="num">06</span>
-    <h2>When is it worth it?</h2>
-    <span class="sub">Rule of thumb: break-even at 3-4 tool calls. Everything beyond is net gain.</span>
-  </div>
-  <div class="worth">
-    <div class="worth-col good">
-      <h3>Yes</h3>
-      <ul>
-        <li><strong>Long sessions, 20+ tool calls</strong>The compression alone pays for itself many times over.</li>
-        <li><strong>Mid-size project exploration</strong>First-time agent exploration of an unfamiliar repo — biggest single win.</li>
-        <li><strong>Debugging test/build output</strong>Semantic compression turns 800-line logs into 1-line summaries.</li>
-      </ul>
-    </div>
-    <div class="worth-col bad">
-      <h3>Skip</h3>
-      <ul>
-        <li><strong>One quick question, no tools</strong>Plugin overhead exceeds savings.</li>
-        <li><strong>Tiny projects (&lt;20 files)</strong>Nothing meaningful to index.</li>
-      </ul>
-    </div>
-  </div>
-</section>
+      <section>
+        <div class="section-head">
+          <span class="num">06</span>
+          <h2>When is it worth it?</h2>
+          <span class="sub"
+            >Rule of thumb: break-even at 3-4 tool calls. Everything beyond is
+            net gain.</span
+          >
+        </div>
+        <div class="worth">
+          <div class="worth-col good">
+            <h3>Yes</h3>
+            <ul>
+              <li>
+                <strong>Long sessions, 20+ tool calls</strong>The compression
+                alone pays for itself many times over.
+              </li>
+              <li>
+                <strong>Mid-size project exploration</strong>First-time agent
+                exploration of an unfamiliar repo — biggest single win.
+              </li>
+              <li>
+                <strong>Debugging test/build output</strong>Semantic compression
+                turns 800-line logs into 1-line summaries.
+              </li>
+            </ul>
+          </div>
+          <div class="worth-col bad">
+            <h3>Skip</h3>
+            <ul>
+              <li>
+                <strong>One quick question, no tools</strong>Plugin overhead
+                exceeds savings.
+              </li>
+              <li>
+                <strong>Tiny projects (&lt;20 files)</strong>Nothing meaningful
+                to index.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
 
-<footer>
-  <div class="footer-grid">
-    <div>
-      <div class="footer-brand">
-        <img src="./assets/icon.png" alt="" />
-        <span>CodeNexum</span>
-      </div>
-      <p class="footer-desc">
-        Open-source code index and context compression for opencode.
-        MIT licensed. Built for agents that read too much.
-      </p>
+      <footer>
+        <div class="footer-grid">
+          <div>
+            <div class="footer-brand">
+              <img src="./assets/icon.png" alt="" />
+              <span>CodeNexum</span>
+            </div>
+            <p class="footer-desc">
+              Open-source code index and context compression for opencode. MIT
+              licensed. Built for agents that read too much.
+            </p>
+          </div>
+          <div class="footer-col">
+            <h4>Project</h4>
+            <ul>
+              <li>
+                <a href="https://github.com/madkoding/codenexum">GitHub</a>
+              </li>
+              <li>
+                <a href="https://github.com/madkoding/codenexum/releases"
+                  >Releases</a
+                >
+              </li>
+              <li>
+                <a href="https://github.com/madkoding/codenexum/issues"
+                  >Issues</a
+                >
+              </li>
+              <li><a href="./README.html">Full README</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Links</h4>
+            <ul>
+              <li><a href="https://opencode.ai">opencode</a></li>
+              <li>
+                <a
+                  href="https://github.com/madkoding/codenexum/blob/main/LICENSE"
+                  >License</a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span class="mono">MIT &copy; 2026 madkoding</span>
+          <span class="mono"
+            >v0.99.10 &middot;
+            <a href="https://github.com/madkoding/codenexum/releases"
+              >changelog</a
+            ></span
+          >
+        </div>
+      </footer>
     </div>
-    <div class="footer-col">
-      <h4>Project</h4>
-      <ul>
-        <li><a href="https://github.com/madkoding/codenexum">GitHub</a></li>
-        <li><a href="https://github.com/madkoding/codenexum/releases">Releases</a></li>
-        <li><a href="https://github.com/madkoding/codenexum/issues">Issues</a></li>
-        <li><a href="./README.html">Full README</a></li>
-      </ul>
-    </div>
-    <div class="footer-col">
-      <h4>Links</h4>
-      <ul>
-        <li><a href="https://opencode.ai">opencode</a></li>
-        <li><a href="https://github.com/madkoding/codenexum/blob/main/LICENSE">License</a></li>
-      </ul>
-    </div>
-  </div>
-  <div class="footer-bottom">
-    <span class="mono">MIT &copy; 2026 madkoding</span>
-    <span class="mono">v0.99.10 &middot; <a href="https://github.com/madkoding/codenexum/releases">changelog</a></span>
-  </div>
-</footer>
 
-</div>
-
-<script type="module">
-  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-  mermaid.initialize({
-    startOnLoad: true,
-    theme: "base",
-    themeVariables: {
-      primaryColor: "#14171f",
-      primaryTextColor: "#d8dce6",
-      primaryBorderColor: "#1e2129",
-      lineColor: "#3b82f6",
-      secondaryColor: "#0f1118",
-      tertiaryColor: "#14171f",
-      fontFamily: "JetBrains Mono, ui-monospace, monospace",
-      fontSize: "13px"
-    }
-  });
-</script>
-
-</body>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "base",
+        themeVariables: {
+          primaryColor: "#14171f",
+          primaryTextColor: "#d8dce6",
+          primaryBorderColor: "#1e2129",
+          lineColor: "#3b82f6",
+          secondaryColor: "#0f1118",
+          tertiaryColor: "#14171f",
+          fontFamily: "JetBrains Mono, ui-monospace, monospace",
+          fontSize: "13px",
+        },
+      });
+    </script>
+  </body>
 </html>

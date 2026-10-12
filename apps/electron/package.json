@@ -31,7 +31,12 @@
       {
         "from": "../../apps/plugin",
         "to": "plugin",
-        "filter": ["dist/index.js", "dist/index.bundled.js", "dist/index.d.ts", "package.json"]
+        "filter": [
+          "dist/index.js",
+          "dist/index.bundled.js",
+          "dist/index.d.ts",
+          "package.json"
+        ]
       },
       {
         "from": "build/tray",
@@ -42,11 +47,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "build/icon.icns",
@@ -57,11 +68,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -79,7 +94,10 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "build/icon-linux.png",

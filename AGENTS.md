@@ -223,27 +223,27 @@ docs/
 
 ## MCP tools (18 total in server.ts)
 
-| Tool | Purpose |
-|---|---|
-| `cm_projects_list` | List all registered projects with chunks/files counts |
-| `cm_projects_get` | Get one project by id |
-| `cm_projects_delete` | Delete project + its sqlite DB |
-| `cm_projects_update` | Rename project |
-| `cm_settings_get` / `cm_settings_set` | Read/write Settings |
-| `cm_stats` | Per-project index stats + usage summary |
-| `cm_aggregate` | byType, byLang, topFiles |
-| `cm_compression` | Compression status + semantic saved |
-| `cm_dashboard` | Projects list + global totals |
-| `cm_analytics` | Activity timeline (24h), cumulative savings, top queries, recent activity, index health, hot files |
-| `cm_analyze` | Walk + parse + write to sqlite |
-| `cm_search` | FTS5+BM25 search (returns raw results) |
-| `cm_related` | Callers/callees/imports/extends/implements via edges table |
-| `cm_impact` | Files depending on given files |
-| `cm_log_event` | Log usage event to usage_events table |
-| `cm_read_snippet` | Return indexed chunk summary for a file (replaces read) |
-| `cm_search_snippet` | Compact grep/glob replacement (returns formatted, grouped) |
-| `cm_cache_get` / `cm_cache_put` | In-memory rawCache (200 entries, 5min TTL) |
-| `cm_compress_output` | ANSI/dedupe/stack + truncate; or semantic if enabled |
+| Tool                                  | Purpose                                                                                            |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `cm_projects_list`                    | List all registered projects with chunks/files counts                                              |
+| `cm_projects_get`                     | Get one project by id                                                                              |
+| `cm_projects_delete`                  | Delete project + its sqlite DB                                                                     |
+| `cm_projects_update`                  | Rename project                                                                                     |
+| `cm_settings_get` / `cm_settings_set` | Read/write Settings                                                                                |
+| `cm_stats`                            | Per-project index stats + usage summary                                                            |
+| `cm_aggregate`                        | byType, byLang, topFiles                                                                           |
+| `cm_compression`                      | Compression status + semantic saved                                                                |
+| `cm_dashboard`                        | Projects list + global totals                                                                      |
+| `cm_analytics`                        | Activity timeline (24h), cumulative savings, top queries, recent activity, index health, hot files |
+| `cm_analyze`                          | Walk + parse + write to sqlite                                                                     |
+| `cm_search`                           | FTS5+BM25 search (returns raw results)                                                             |
+| `cm_related`                          | Callers/callees/imports/extends/implements via edges table                                         |
+| `cm_impact`                           | Files depending on given files                                                                     |
+| `cm_log_event`                        | Log usage event to usage_events table                                                              |
+| `cm_read_snippet`                     | Return indexed chunk summary for a file (replaces read)                                            |
+| `cm_search_snippet`                   | Compact grep/glob replacement (returns formatted, grouped)                                         |
+| `cm_cache_get` / `cm_cache_put`       | In-memory rawCache (200 entries, 5min TTL)                                                         |
+| `cm_compress_output`                  | ANSI/dedupe/stack + truncate; or semantic if enabled                                               |
 
 Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `context_impact`, `context_stats`, `context_compression`, `context_analyze`, `context_dashboard`. Each maps to an `cm_*` MCP call.
 
@@ -252,6 +252,7 @@ Plugin exposes 7 tools to opencode: `context_search`, `context_related`, `contex
 ## SQLite schema (SCHEMA_VERSION=3)
 
 **Per-project DB:**
+
 - `chunks_fts` — FTS5 virtual table with trigram tokenizer (name, content UNINDEXED; id, file, type, line, lineEnd, body, lang UNINDEXED)
 - `file_hashes` — file TEXT PK → sha256 hash, for incremental re-index detection
 - `meta` — key/value (schema_version, lastIndexed, projectRoot)

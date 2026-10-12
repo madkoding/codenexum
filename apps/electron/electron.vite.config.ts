@@ -1,9 +1,11 @@
-import { defineConfig, externalizeDepsPlugin } from "electron-vite"
-import react from "@vitejs/plugin-react"
+import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ["@codenexum/core", "@codenexum/sql"] })],
+    plugins: [
+      externalizeDepsPlugin({ exclude: ["@codenexum/core", "@codenexum/sql"] }),
+    ],
     build: {
       outDir: "dist/main",
       rollupOptions: {
@@ -28,4 +30,4 @@ export default defineConfig({
     build: { outDir: "dist/renderer" },
     plugins: [react()],
   },
-})
+});

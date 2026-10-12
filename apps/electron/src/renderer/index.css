@@ -4,7 +4,11 @@
 
 @layer base {
   body {
-    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;

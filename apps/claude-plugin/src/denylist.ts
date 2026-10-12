@@ -13,9 +13,9 @@ const DENYLIST_PATTERNS: RegExp[] = [
   /(^|\/)[^/]*credentials[^/]*$/i,
   /(^|\/)cdk\.context\.json$/,
   /(^|\/)cdk\.out(\/|$)/,
-]
+];
 
 export function isDenylistedPath(path: string | undefined | null): boolean {
-  if (!path) return false
-  return DENYLIST_PATTERNS.some((re) => re.test(path))
+  if (!path) return false;
+  return DENYLIST_PATTERNS.some((re) => re.test(path));
 }

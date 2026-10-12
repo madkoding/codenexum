@@ -1,11 +1,11 @@
-import { StrictMode } from "react"
-import { createRoot } from "react-dom/client"
-import { HashRouter, Routes, Route } from "react-router-dom"
-import "./index.css"
-import App from "./App"
-import { ProjectsPage } from "./pages/ProjectsPage"
-import { ProjectDetailPage } from "./pages/ProjectDetailPage"
-import { SettingsPage } from "./pages/SettingsPage"
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { HashRouter, Routes, Route } from "react-router-dom";
+import "./index.css";
+import App from "./App";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { ProjectDetailPage } from "./pages/ProjectDetailPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -19,4 +19,4 @@ createRoot(document.getElementById("root")!).render(
       </Routes>
     </HashRouter>
   </StrictMode>,
-)
+);

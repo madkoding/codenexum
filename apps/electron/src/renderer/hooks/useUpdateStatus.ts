@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback } from "react";
 
 export type UpdateStatus =
   | "idle"
@@ -9,29 +9,29 @@ export type UpdateStatus =
   | "not-available"
   | "error"
   | "unsupported"
-  | "disabled"
+  | "disabled";
 
 export type UpdateInfo = {
-  version: string
-  releaseDate?: string
-  releaseNotes?: string | string[] | null
-}
+  version: string;
+  releaseDate?: string;
+  releaseNotes?: string | string[] | null;
+};
 
 export type ManualCheck = {
-  result: "up-to-date" | "available" | "error" | "checking"
-  version?: string
-  error?: string
-  ts: number
-}
+  result: "up-to-date" | "available" | "error" | "checking";
+  version?: string;
+  error?: string;
+  ts: number;
+};
 
 export type UpdateSnapshot = {
-  status: UpdateStatus
-  progress: number
-  info: UpdateInfo | null
-  error: string | null
-  currentVersion: string
-  manualCheck: ManualCheck | null
-}
+  status: UpdateStatus;
+  progress: number;
+  info: UpdateInfo | null;
+  error: string | null;
+  currentVersion: string;
+  manualCheck: ManualCheck | null;
+};
 
 const IDLE: UpdateSnapshot = {
   status: "idle",
@@ -40,28 +40,28 @@ const IDLE: UpdateSnapshot = {
   error: null,
   currentVersion: "0.0.0",
   manualCheck: null,
-}
+};
 
 export function useUpdateStatus() {
-  const [snap, setSnap] = useState<UpdateSnapshot>(IDLE)
+  const [snap, setSnap] = useState<UpdateSnapshot>(IDLE);
 
   useEffect(() => {
-    let mounted = true
+    let mounted = true;
     window.electronAPI.update.getStatus().then((s) => {
-      if (mounted) setSnap(s)
-    })
+      if (mounted) setSnap(s);
+    });
     const off = window.electronAPI.update.onStatusChange((s) => {
-      if (mounted) setSnap(s)
-    })
+      if (mounted) setSnap(s);
+    });
     return () => {
-      mounted = false
-      off()
-    }
-  }, [])
+      mounted = false;
+      off();
+    };
+  }, []);
 
-  const check = useCallback(() => window.electronAPI.update.check(), [])
-  const download = useCallback(() => window.electronAPI.update.download(), [])
-  const install = useCallback(() => window.electronAPI.update.install(), [])
+  const check = useCallback(() => window.electronAPI.update.check(), []);
+  const download = useCallback(() => window.electronAPI.update.download(), []);
+  const install = useCallback(() => window.electronAPI.update.install(), []);
 
-  return { ...snap, check, download, install }
+  return { ...snap, check, download, install };
 }
