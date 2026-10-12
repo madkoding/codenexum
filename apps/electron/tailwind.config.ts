@@ -25,12 +25,16 @@ export default {
       },
       boxShadow: {
         card: "0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.2)",
-        "card-hover": "0 8px 24px -4px rgb(0 0 0 / 0.4), 0 4px 8px -2px rgb(59 130 246 / 0.1)",
+        "card-hover":
+          "0 8px 24px -4px rgb(0 0 0 / 0.4), 0 4px 8px -2px rgb(59 130 246 / 0.1)",
         sidebar: "4px 0 24px -8px rgb(0 0 0 / 0.5)",
         topbar: "0 1px 0 0 rgb(255 255 255 / 0.05)",
       },
       keyframes: {
-        "slide-in": { from: { transform: "translateX(-100%)" }, to: { transform: "translateX(0)" } },
+        "slide-in": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
       },
       animation: {
         "slide-in": "slide-in 0.2s ease-out",
@@ -38,4 +42,4 @@ export default {
     },
   },
   plugins: [],
-}
+};

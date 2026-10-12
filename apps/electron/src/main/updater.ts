@@ -1,9 +1,13 @@
-import { app, BrowserWindow } from "electron"
-import { autoUpdater, type ProgressInfo, type UpdateInfo } from "electron-updater"
-import { resolveUpdaterConfig } from "./updater-config.js"
+import { app, BrowserWindow } from "electron";
+import {
+  autoUpdater,
+  type ProgressInfo,
+  type UpdateInfo,
+} from "electron-updater";
+import { resolveUpdaterConfig } from "./updater-config.js";
 
-export { resolveUpdaterConfig } from "./updater-config.js"
-export type { UpdaterConfig } from "./updater-config.js"
+export { resolveUpdaterConfig } from "./updater-config.js";
+export type { UpdaterConfig } from "./updater-config.js";
 
 export type UpdateStatus =
   | "idle"
@@ -14,97 +18,113 @@ export type UpdateStatus =
   | "not-available"
   | "error"
   | "unsupported"
-  | "disabled"
+  | "disabled";
 
 export type UpdateSnapshot = {
-  status: UpdateStatus
-  progress: number
-  info: UpdateInfo | null
-  error: string | null
-  currentVersion: string
-  manualCheck: null | { result: "up-to-date" | "available" | "error" | "checking"; version?: string; error?: string; ts: number }
-}
+  status: UpdateStatus;
+  progress: number;
+  info: UpdateInfo | null;
+  error: string | null;
+  currentVersion: string;
+  manualCheck: null | {
+    result: "up-to-date" | "available" | "error" | "checking";
+    version?: string;
+    error?: string;
+    ts: number;
+  };
+};
 
-const CHECK_DELAY_MS = resolveUpdaterConfig().checkDelayMs
+const CHECK_DELAY_MS = resolveUpdaterConfig().checkDelayMs;
 
 export class UpdateManager {
-  status: UpdateStatus = "idle"
-  progress = 0
-  info: UpdateInfo | null = null
-  error: string | null = null
-  manualCheck: UpdateSnapshot["manualCheck"] = null
-  private timer: NodeJS.Timeout | null = null
+  status: UpdateStatus = "idle";
+  progress = 0;
+  info: UpdateInfo | null = null;
+  error: string | null = null;
+  manualCheck: UpdateSnapshot["manualCheck"] = null;
+  private timer: NodeJS.Timeout | null = null;
 
   init() {
     if (!app.isPackaged) {
-      this.setStatus("disabled")
-      return
+      this.setStatus("disabled");
+      return;
     }
     if (process.env.CODENEXUM_DISABLE_UPDATES === "1") {
-      this.setStatus("disabled")
-      return
+      this.setStatus("disabled");
+      return;
     }
     if (process.env.CODENEXUM_UPDATE_FEED_URL) {
-      autoUpdater.setFeedURL({ provider: "generic", url: process.env.CODENEXUM_UPDATE_FEED_URL })
+      autoUpdater.setFeedURL({
+        provider: "generic",
+        url: process.env.CODENEXUM_UPDATE_FEED_URL,
+      });
     }
-    autoUpdater.autoDownload = false
-    autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.on("checking-for-update", () => {
-      this.setStatus("checking")
-    })
+      this.setStatus("checking");
+    });
     autoUpdater.on("update-available", (info) => {
-      this.info = info
-      this.manualCheck = { result: "available", version: info.version, ts: Date.now() }
-      this.setStatus("available")
-    })
+      this.info = info;
+      this.manualCheck = {
+        result: "available",
+        version: info.version,
+        ts: Date.now(),
+      };
+      this.setStatus("available");
+    });
     autoUpdater.on("update-not-available", () => {
-      this.manualCheck = { result: "up-to-date", ts: Date.now() }
-      this.setStatus("not-available")
-    })
+      this.manualCheck = { result: "up-to-date", ts: Date.now() };
+      this.setStatus("not-available");
+    });
     autoUpdater.on("download-progress", (p: ProgressInfo) => {
-      this.progress = Math.round(p.percent)
-      this.setStatus("downloading")
-    })
+      this.progress = Math.round(p.percent);
+      this.setStatus("downloading");
+    });
     autoUpdater.on("update-downloaded", (info) => {
-      this.info = info
-      this.progress = 100
-      this.setStatus("downloaded")
-    })
+      this.info = info;
+      this.progress = 100;
+      this.setStatus("downloaded");
+    });
     autoUpdater.on("error", (err) => {
-      this.error = err?.message || String(err)
-      this.manualCheck = { result: "error", error: this.error, ts: Date.now() }
-      this.setStatus("error")
-    })
-    this.timer = setTimeout(() => this.check(), CHECK_DELAY_MS)
+      this.error = err?.message || String(err);
+      this.manualCheck = { result: "error", error: this.error, ts: Date.now() };
+      this.setStatus("error");
+    });
+    this.timer = setTimeout(() => this.check(), CHECK_DELAY_MS);
   }
 
   async check(): Promise<void> {
-    if (this.status === "disabled" || this.status === "unsupported") return
-    this.error = null
-    this.manualCheck = { result: "checking", ts: Date.now() }
-    this.broadcast()
+    if (this.status === "disabled" || this.status === "unsupported") return;
+    this.error = null;
+    this.manualCheck = { result: "checking", ts: Date.now() };
+    this.broadcast();
     try {
-      await autoUpdater.checkForUpdates()
+      await autoUpdater.checkForUpdates();
     } catch (e: any) {
-      this.error = e?.message || String(e)
-      this.manualCheck = { result: "error", error: this.error ?? undefined, ts: Date.now() }
-      this.setStatus("error")
+      this.error = e?.message || String(e);
+      this.manualCheck = {
+        result: "error",
+        error: this.error ?? undefined,
+        ts: Date.now(),
+      };
+      this.setStatus("error");
     }
   }
 
   async download(): Promise<void> {
-    if (this.status === "disabled" || this.status === "unsupported") return
+    if (this.status === "disabled" || this.status === "unsupported") return;
     try {
-      await autoUpdater.downloadUpdate()
+      await autoUpdater.downloadUpdate();
     } catch (e: any) {
-      this.error = e?.message || String(e)
-      this.setStatus("error")
+      this.error = e?.message || String(e);
+      this.setStatus("error");
     }
   }
 
   installAndRestart(): void {
-    if (this.status === "disabled" || this.status === "unsupported") return
-    autoUpdater.quitAndInstall()
+    if (this.status === "disabled" || this.status === "unsupported") return;
+    autoUpdater.quitAndInstall();
   }
 
   getStatus(): UpdateSnapshot {
@@ -115,22 +135,23 @@ export class UpdateManager {
       error: this.error,
       currentVersion: app.getVersion(),
       manualCheck: this.manualCheck,
-    }
+    };
   }
 
   private setStatus(s: UpdateStatus) {
-    this.status = s
-    this.broadcast()
+    this.status = s;
+    this.broadcast();
   }
 
   private broadcast() {
-    const snap = this.getStatus()
+    const snap = this.getStatus();
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send("update:status-changed", snap)
+      if (!win.isDestroyed())
+        win.webContents.send("update:status-changed", snap);
     }
   }
 
   dispose() {
-    if (this.timer) clearTimeout(this.timer)
+    if (this.timer) clearTimeout(this.timer);
   }
 }

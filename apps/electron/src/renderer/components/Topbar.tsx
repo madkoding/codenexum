@@ -1,4 +1,4 @@
-import { Menu, Settings, FolderOpen, ExternalLink } from "lucide-react"
+import { Menu, Settings, FolderOpen, ExternalLink } from "lucide-react";
 
 export default function Topbar({
   title,
@@ -8,12 +8,12 @@ export default function Topbar({
   onOpenFolder,
   onShowInFolder,
 }: {
-  title?: string
-  subtitle?: string
-  onMenuClick?: () => void
-  onSettingsClick?: () => void
-  onOpenFolder?: () => void
-  onShowInFolder?: () => void
+  title?: string;
+  subtitle?: string;
+  onMenuClick?: () => void;
+  onSettingsClick?: () => void;
+  onOpenFolder?: () => void;
+  onShowInFolder?: () => void;
 }) {
   return (
     <header className="sticky top-0 z-30 bg-bg/90 backdrop-blur border-b border-gray-800 px-3 sm:px-4 md:px-6 py-2.5 md:py-3 flex items-center justify-between">
@@ -27,8 +27,16 @@ export default function Topbar({
             <Menu size={20} />
           </button>
         ) : null}
-        {title ? <h1 className="text-base sm:text-lg font-semibold truncate">{title}</h1> : null}
-        {subtitle ? <span className="text-xs sm:text-sm text-muted hidden sm:inline truncate">{subtitle}</span> : null}
+        {title ? (
+          <h1 className="text-base sm:text-lg font-semibold truncate">
+            {title}
+          </h1>
+        ) : null}
+        {subtitle ? (
+          <span className="text-xs sm:text-sm text-muted hidden sm:inline truncate">
+            {subtitle}
+          </span>
+        ) : null}
       </div>
       <div className="flex items-center gap-1">
         {onOpenFolder ? (
@@ -63,5 +71,5 @@ export default function Topbar({
         ) : null}
       </div>
     </header>
-  )
+  );
 }

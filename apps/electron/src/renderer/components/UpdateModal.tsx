@@ -1,48 +1,81 @@
-import { useState, useEffect } from "react"
-import { X, Download, RefreshCw, AlertCircle, ExternalLink, CheckCircle2, Check } from "lucide-react"
-import { useUpdateStatus } from "../hooks/useUpdateStatus"
+import { useState, useEffect } from "react";
+import {
+  X,
+  Download,
+  RefreshCw,
+  AlertCircle,
+  ExternalLink,
+  CheckCircle2,
+  Check,
+} from "lucide-react";
+import { useUpdateStatus } from "../hooks/useUpdateStatus";
 
 function renderNotes(raw: string | string[] | null | undefined): string {
-  if (!raw) return ""
-  if (typeof raw === "string") return raw
-  return raw.join("\n\n")
+  if (!raw) return "";
+  if (typeof raw === "string") return raw;
+  return raw.join("\n\n");
 }
 
-const TOAST_TTL_MS = 5000
+const TOAST_TTL_MS = 5000;
 
 export default function UpdateModal() {
-  const { status, progress, info, error, currentVersion, manualCheck, check, download, install } = useUpdateStatus()
-  const [dismissed, setDismissed] = useState<string | null>(null)
-  const [dismissedToast, setDismissedToast] = useState<number | null>(null)
+  const {
+    status,
+    progress,
+    info,
+    error,
+    currentVersion,
+    manualCheck,
+    check,
+    download,
+    install,
+  } = useUpdateStatus();
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [dismissedToast, setDismissedToast] = useState<number | null>(null);
 
   useEffect(() => {
-    if (status === "available" || status === "downloaded" || status === "unsupported") {
-      setDismissed(null)
+    if (
+      status === "available" ||
+      status === "downloaded" ||
+      status === "unsupported"
+    ) {
+      setDismissed(null);
     }
-  }, [status, info?.version])
+  }, [status, info?.version]);
 
   useEffect(() => {
-    if (!manualCheck) return
+    if (!manualCheck) return;
     if (manualCheck.result === "checking") {
-      setDismissedToast(null)
-      return
+      setDismissedToast(null);
+      return;
     }
-    const t = setTimeout(() => setDismissedToast(manualCheck.ts), TOAST_TTL_MS)
-    return () => clearTimeout(t)
-  }, [manualCheck?.ts, manualCheck?.result])
+    const t = setTimeout(() => setDismissedToast(manualCheck.ts), TOAST_TTL_MS);
+    return () => clearTimeout(t);
+  }, [manualCheck?.ts, manualCheck?.result]);
 
-  const showToast = manualCheck && dismissedToast !== manualCheck.ts && (manualCheck.result === "up-to-date" || manualCheck.result === "error")
-  const showCheckingToast = manualCheck && manualCheck.result === "checking" && status !== "available" && status !== "downloading" && status !== "downloaded"
+  const showToast =
+    manualCheck &&
+    dismissedToast !== manualCheck.ts &&
+    (manualCheck.result === "up-to-date" || manualCheck.result === "error");
+  const showCheckingToast =
+    manualCheck &&
+    manualCheck.result === "checking" &&
+    status !== "available" &&
+    status !== "downloading" &&
+    status !== "downloaded";
 
-  if (status === "idle" || status === "disabled") return null
-  if (status === "checking" && !showCheckingToast && !showToast) return null
-  if (status === "not-available" && !showToast) return null
-  if (status === "error" && dismissed === error && !showToast) return null
-  if (status === "available" && dismissed === "available:" + info?.version) return null
-  if (status === "unsupported" && dismissed === "unsupported:" + info?.version) return null
-  if (status === "downloading" && dismissed === "downloading:" + info?.version) return null
+  if (status === "idle" || status === "disabled") return null;
+  if (status === "checking" && !showCheckingToast && !showToast) return null;
+  if (status === "not-available" && !showToast) return null;
+  if (status === "error" && dismissed === error && !showToast) return null;
+  if (status === "available" && dismissed === "available:" + info?.version)
+    return null;
+  if (status === "unsupported" && dismissed === "unsupported:" + info?.version)
+    return null;
+  if (status === "downloading" && dismissed === "downloading:" + info?.version)
+    return null;
 
-  const dismiss = (key: string) => setDismissed(key)
+  const dismiss = (key: string) => setDismissed(key);
 
   if (showCheckingToast) {
     return (
@@ -50,7 +83,7 @@ export default function UpdateModal() {
         <RefreshCw size={16} className="text-accent shrink-0 animate-spin" />
         <p className="text-sm font-medium">Checking for updates…</p>
       </Toast>
-    )
+    );
   }
 
   if (showToast) {
@@ -60,10 +93,12 @@ export default function UpdateModal() {
           <Check size={16} className="text-emerald-400 shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-medium">You're up to date</p>
-            <p className="text-xs text-muted">v{currentVersion} is the latest version.</p>
+            <p className="text-xs text-muted">
+              v{currentVersion} is the latest version.
+            </p>
           </div>
         </Toast>
-      )
+      );
     }
     if (manualCheck?.result === "error") {
       return (
@@ -71,10 +106,15 @@ export default function UpdateModal() {
           <AlertCircle size={16} className="text-bad shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-medium">Update check failed</p>
-            <p className="text-xs text-muted truncate" title={manualCheck.error}>{manualCheck.error}</p>
+            <p
+              className="text-xs text-muted truncate"
+              title={manualCheck.error}
+            >
+              {manualCheck.error}
+            </p>
           </div>
         </Toast>
-      )
+      );
     }
   }
 
@@ -84,11 +124,18 @@ export default function UpdateModal() {
         <Download size={16} className="text-accent shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium truncate">Downloading v{info?.version}</p>
-            <p className="text-xs text-muted tabular-nums shrink-0">{progress}%</p>
+            <p className="text-sm font-medium truncate">
+              Downloading v{info?.version}
+            </p>
+            <p className="text-xs text-muted tabular-nums shrink-0">
+              {progress}%
+            </p>
           </div>
           <div className="h-1.5 bg-bg rounded-full overflow-hidden mt-1.5">
-            <div className="h-full bg-accent transition-all" style={{ width: `${progress}%` }} />
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${progress}%` }}
+            />
           </div>
         </div>
         <button
@@ -99,7 +146,7 @@ export default function UpdateModal() {
           <X size={14} />
         </button>
       </Toast>
-    )
+    );
   }
 
   if (status === "error" && !showToast) {
@@ -111,20 +158,33 @@ export default function UpdateModal() {
           <p className="text-xs text-muted break-words">{error}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <button onClick={check} className="text-xs text-accent hover:underline">Retry</button>
-          <button onClick={() => dismiss(error || "error")} className="p-1 hover:bg-panel2 rounded text-muted" aria-label="Close">
+          <button
+            onClick={check}
+            className="text-xs text-accent hover:underline"
+          >
+            Retry
+          </button>
+          <button
+            onClick={() => dismiss(error || "error")}
+            className="p-1 hover:bg-panel2 rounded text-muted"
+            aria-label="Close"
+          >
             <X size={14} />
           </button>
         </div>
       </Toast>
-    )
+    );
   }
 
   if (status === "unsupported") {
     return (
-      <Modal title={`CodeNexum v${info?.version} available`} onClose={() => dismiss("unsupported:" + info?.version)}>
+      <Modal
+        title={`CodeNexum v${info?.version} available`}
+        onClose={() => dismiss("unsupported:" + info?.version)}
+      >
         <p className="text-sm text-muted">
-          Your current install format doesn't support auto-update on this platform. Download the new version manually:
+          Your current install format doesn't support auto-update on this
+          platform. Download the new version manually:
         </p>
         <a
           href="https://github.com/madKoding/codenexum/releases/latest"
@@ -143,18 +203,23 @@ export default function UpdateModal() {
           </button>
         </div>
       </Modal>
-    )
+    );
   }
 
   if (status === "available") {
     return (
-      <Modal title={`CodeNexum v${info?.version} available`} onClose={() => dismiss("available:" + info?.version)}>
+      <Modal
+        title={`CodeNexum v${info?.version} available`}
+        onClose={() => dismiss("available:" + info?.version)}
+      >
         <p className="text-sm text-muted">
           You're running v{currentVersion}. A new version is ready to download.
         </p>
         {info?.releaseNotes ? (
           <details className="text-xs">
-            <summary className="cursor-pointer text-muted hover:text-text">Release notes</summary>
+            <summary className="cursor-pointer text-muted hover:text-text">
+              Release notes
+            </summary>
             <pre className="mt-2 p-3 bg-bg border border-gray-800 rounded-lg max-h-48 overflow-y-auto scrollbar-thin whitespace-pre-wrap font-sans">
               {renderNotes(info.releaseNotes)}
             </pre>
@@ -176,14 +241,20 @@ export default function UpdateModal() {
           </button>
         </div>
       </Modal>
-    )
+    );
   }
 
   if (status === "downloaded") {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="bg-panel border border-gray-800 rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
-          <h2 className="text-lg font-semibold">Restart to install v{info?.version}</h2>
+          <h2 className="text-lg font-semibold">
+            Restart to install v{info?.version}
+          </h2>
           <div className="flex items-start gap-2">
             <CheckCircle2 size={16} className="text-accent mt-0.5 shrink-0" />
             <p className="text-sm text-muted">
@@ -207,13 +278,19 @@ export default function UpdateModal() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
-  return null
+  return null;
 }
 
-function Toast({ children, onClose }: { children: React.ReactNode; onClose?: () => void }) {
+function Toast({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose?: () => void;
+}) {
   return (
     <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)]">
       <div className="bg-panel border border-gray-800 rounded-xl shadow-2xl p-4 flex items-center gap-3">
@@ -229,24 +306,41 @@ function Toast({ children, onClose }: { children: React.ReactNode; onClose?: () 
         ) : null}
       </div>
     </div>
-  )
+  );
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
       <div
         className="bg-panel border border-gray-800 rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-panel2 rounded text-muted" aria-label="Close">
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-panel2 rounded text-muted"
+            aria-label="Close"
+          >
             <X size={18} />
           </button>
         </div>
         {children}
       </div>
     </div>
-  )
+  );
 }

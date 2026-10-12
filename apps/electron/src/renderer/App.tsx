@@ -1,79 +1,83 @@
-import { useState, useEffect, useCallback } from "react"
-import { Outlet, useLocation, useParams } from "react-router-dom"
-import { Menu } from "lucide-react"
-import { useWebSocket } from "./hooks/useWebSocket"
-import Sidebar from "./components/Sidebar"
-import Topbar from "./components/Topbar"
-import ProjectSettingsModal from "./components/ProjectSettingsModal"
-import UpdateModal from "./components/UpdateModal"
-import type { Project } from "./types"
+import { useState, useEffect, useCallback } from "react";
+import { Outlet, useLocation, useParams } from "react-router-dom";
+import { Menu } from "lucide-react";
+import { useWebSocket } from "./hooks/useWebSocket";
+import Sidebar from "./components/Sidebar";
+import Topbar from "./components/Topbar";
+import ProjectSettingsModal from "./components/ProjectSettingsModal";
+import UpdateModal from "./components/UpdateModal";
+import type { Project } from "./types";
 
 export default function App() {
-  useWebSocket()
-  const location = useLocation()
-  const params = useParams<{ id: string }>()
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [settingsProject, setSettingsProject] = useState<Project | null>(null)
-  const [project, setProject] = useState<Project | null>(null)
+  useWebSocket();
+  const location = useLocation();
+  const params = useParams<{ id: string }>();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
 
-  const isProjectPage = location.pathname.startsWith("/project/") && !!params.id
-  const showTopbar = isProjectPage
-  const isHomeOrSettings = !isProjectPage
-  const mobileTitle = isHomeOrSettings ? "CodeNexum" : project?.name
+  const isProjectPage =
+    location.pathname.startsWith("/project/") && !!params.id;
+  const showTopbar = isProjectPage;
+  const isHomeOrSettings = !isProjectPage;
+  const mobileTitle = isHomeOrSettings ? "CodeNexum" : project?.name;
 
   const fetchProject = useCallback(async (id: string) => {
     try {
-      const url = await window.electronAPI.invoke("get-mcp-url")
+      const url = await window.electronAPI.invoke("get-mcp-url");
       const res = await fetch(`${url}/tools/call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: "cm_projects_get", args: { id } }),
-      })
-      if (!res.ok) return
-      const data = await res.json()
-      const p = data.result || data
-      if (p?.id) setProject(p)
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const p = data.result || data;
+      if (p?.id) setProject(p);
     } catch {}
-  }, [])
+  }, []);
 
   useEffect(() => {
-    setDrawerOpen(false)
-    setSettingsProject(null)
+    setDrawerOpen(false);
+    setSettingsProject(null);
     if (params.id) {
-      fetchProject(params.id)
+      fetchProject(params.id);
     } else {
-      setProject(null)
+      setProject(null);
     }
-  }, [location.pathname, params.id, fetchProject])
+  }, [location.pathname, params.id, fetchProject]);
 
   useEffect(() => {
     const handler = () => {
-      if (params.id) fetchProject(params.id)
-    }
-    window.addEventListener("cm-data", handler)
-    return () => window.removeEventListener("cm-data", handler)
-  }, [params.id, fetchProject])
+      if (params.id) fetchProject(params.id);
+    };
+    window.addEventListener("cm-data", handler);
+    return () => window.removeEventListener("cm-data", handler);
+  }, [params.id, fetchProject]);
 
   const openSettings = async () => {
-    if (!params.id) return
-    const url = await window.electronAPI.invoke("get-mcp-url")
+    if (!params.id) return;
+    const url = await window.electronAPI.invoke("get-mcp-url");
     const res = await fetch(`${url}/tools/call`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool: "cm_projects_get", args: { id: params.id } }),
-    })
-    if (!res.ok) return
-    const data = await res.json()
-    const project = data.result || data
-    if (project?.id) setSettingsProject(project)
-  }
+      body: JSON.stringify({
+        tool: "cm_projects_get",
+        args: { id: params.id },
+      }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const project = data.result || data;
+    if (project?.id) setSettingsProject(project);
+  };
 
   const openFolder = () => {
-    if (project?.path) window.electronAPI.openPath(project.path)
-  }
+    if (project?.path) window.electronAPI.openPath(project.path);
+  };
   const showInFolder = () => {
-    if (project?.path) window.electronAPI.showInFolder(project.path)
-  }
+    if (project?.path) window.electronAPI.showInFolder(project.path);
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg">
@@ -84,7 +88,10 @@ export default function App() {
       </aside>
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setDrawerOpen(false)} />
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={() => setDrawerOpen(false)}
+        />
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -108,7 +115,9 @@ export default function App() {
               >
                 <Menu size={20} />
               </button>
-              <h1 className="text-base font-semibold truncate">{mobileTitle}</h1>
+              <h1 className="text-base font-semibold truncate">
+                {mobileTitle}
+              </h1>
             </div>
           </header>
         ) : null}
@@ -129,5 +138,5 @@ export default function App() {
 
       <UpdateModal />
     </div>
-  )
+  );
 }

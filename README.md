@@ -38,18 +38,18 @@ something your model can actually use: **indexed chunks, semantic summaries, and
 
 ## Features
 
-| | Feature | Why you care |
-|---|---|---|
-| 🔥 | **Incremental FTS5 + BM25 index** | Local SQLite, sub-millisecond search. Your code becomes searchable, not just readable. |
-| 🧠 | **Semantic summaries** | `npm test` with 800 lines → 1 line: `8 passed, 3 failed`. The model learns only what it needs. |
-| ✂️ | **ANSI / dedupe / stack-trim compression** | Strip colors, collapse repeated lines, trim indentation. Details that cost tokens and add nothing. |
-| 🧩 | **`read` → indexed chunks** | Read the file, return only indexed symbols (functions, classes, exports). Keep context, skip the whole file. |
-| 🔍 | **Indexed `grep` and `glob`** | Search the real indexed code, not your noisy filesystem. |
-| 🔗 | **Callers / callees / impact** | Ask "who uses this function?" and get the list instantly, no manual navigation. |
-| 💾 | **In-memory + on-disk cache** | Repeated `read`/`grep` cost nothing. Persists across sessions. |
-| 📊 | **Live React dashboard** | Tokens saved, top queries, hot files, index health, all in real time. |
-| 🪶 | **Thin plugin (~120 LOC)** | No business logic in the plugin. All indexing lives in the app — the plugin is just a proxy. |
-| 🖥️ | **Cross-platform** | macOS, Windows, Linux. Tray app with auto-start. |
+|     | Feature                                    | Why you care                                                                                                 |
+| --- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| 🔥  | **Incremental FTS5 + BM25 index**          | Local SQLite, sub-millisecond search. Your code becomes searchable, not just readable.                       |
+| 🧠  | **Semantic summaries**                     | `npm test` with 800 lines → 1 line: `8 passed, 3 failed`. The model learns only what it needs.               |
+| ✂️  | **ANSI / dedupe / stack-trim compression** | Strip colors, collapse repeated lines, trim indentation. Details that cost tokens and add nothing.           |
+| 🧩  | **`read` → indexed chunks**                | Read the file, return only indexed symbols (functions, classes, exports). Keep context, skip the whole file. |
+| 🔍  | **Indexed `grep` and `glob`**              | Search the real indexed code, not your noisy filesystem.                                                     |
+| 🔗  | **Callers / callees / impact**             | Ask "who uses this function?" and get the list instantly, no manual navigation.                              |
+| 💾  | **In-memory + on-disk cache**              | Repeated `read`/`grep` cost nothing. Persists across sessions.                                               |
+| 📊  | **Live React dashboard**                   | Tokens saved, top queries, hot files, index health, all in real time.                                        |
+| 🪶  | **Thin plugin (~120 LOC)**                 | No business logic in the plugin. All indexing lives in the app — the plugin is just a proxy.                 |
+| 🖥️  | **Cross-platform**                         | macOS, Windows, Linux. Tray app with auto-start.                                                             |
 
 ---
 
@@ -128,13 +128,13 @@ bun install
 bun run --filter @codenexum/electron package
 ```
 
-| Platform | Artifact |
-|---|---|
-| macOS (Apple Silicon) | `CodeNexum-arm64.dmg` |
-| macOS (Intel) | `CodeNexum-x64.dmg` |
-| Windows | `CodeNexum-Setup.exe` (NSIS installer) or `CodeNexum-Portable.exe` |
-| Linux x86_64 | `CodeNexum-x86_64.AppImage` |
-| Linux arm64 | `CodeNexum-arm64.AppImage` |
+| Platform              | Artifact                                                           |
+| --------------------- | ------------------------------------------------------------------ |
+| macOS (Apple Silicon) | `CodeNexum-arm64.dmg`                                              |
+| macOS (Intel)         | `CodeNexum-x64.dmg`                                                |
+| Windows               | `CodeNexum-Setup.exe` (NSIS installer) or `CodeNexum-Portable.exe` |
+| Linux x86_64          | `CodeNexum-x86_64.AppImage`                                        |
+| Linux arm64           | `CodeNexum-arm64.AppImage`                                         |
 
 Open the app — it runs in the background with a tray icon.
 
@@ -216,17 +216,17 @@ A second client, `@codenexum/claude-plugin`, is a thin hook for [Claude Code](ht
 
 ## Tools registered
 
-| Tool | What it does |
-|---|---|
-| `context_search` | Full-text search (FTS5 + BM25) over the index |
-| `context_related` | Callers, callees, imports, extends, implements of a symbol |
-| `context_impact` | Files that depend on the given files |
-| `context_stats` | Index stats: chunks, fill %, estimated savings |
-| `context_analyze` | Re-index a project or path |
-| `context_read_snippet` | Indexed snippet instead of full `read` |
-| `context_search_snippet` | Search snippet to replace `grep`/`glob` |
-| `context_compression` | Compressor diagnostics |
-| `context_dashboard` | Dashboard state as JSON |
+| Tool                     | What it does                                               |
+| ------------------------ | ---------------------------------------------------------- |
+| `context_search`         | Full-text search (FTS5 + BM25) over the index              |
+| `context_related`        | Callers, callees, imports, extends, implements of a symbol |
+| `context_impact`         | Files that depend on the given files                       |
+| `context_stats`          | Index stats: chunks, fill %, estimated savings             |
+| `context_analyze`        | Re-index a project or path                                 |
+| `context_read_snippet`   | Indexed snippet instead of full `read`                     |
+| `context_search_snippet` | Search snippet to replace `grep`/`glob`                    |
+| `context_compression`    | Compressor diagnostics                                     |
+| `context_dashboard`      | Dashboard state as JSON                                    |
 
 ---
 
@@ -275,13 +275,13 @@ flowchart TD
 
 > **Rule of thumb:** break-even at 3–4 tool calls. Everything beyond is net gain.
 
-| Situation | Worth it? |
-|---|---|
-| Long session, 20+ tool calls on a large codebase | **Yes, brutal** |
-| Mid-size project, agent's first exploration | **Yes** |
-| Debugging tests / builds with huge logs | **Yes, huge** (semantic compression) |
-| One quick question, no tools | No (plugin overhead > savings) |
-| Tiny project (<20 files) | No (nothing to index) |
+| Situation                                        | Worth it?                            |
+| ------------------------------------------------ | ------------------------------------ |
+| Long session, 20+ tool calls on a large codebase | **Yes, brutal**                      |
+| Mid-size project, agent's first exploration      | **Yes**                              |
+| Debugging tests / builds with huge logs          | **Yes, huge** (semantic compression) |
+| One quick question, no tools                     | No (plugin overhead > savings)       |
+| Tiny project (<20 files)                         | No (nothing to index)                |
 
 ---
 

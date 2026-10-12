@@ -11,17 +11,17 @@ CodeNexum ships auto-updates via GitHub Releases. The Electron app polls the lat
 
 ## Update states
 
-| State | Meaning | UI |
-| --- | --- | --- |
-| `idle` | Initial, no check yet | None |
-| `checking` | Network call to GitHub in flight | None |
-| `available` | New version found, ready to download | Centered modal: "Download" / "Later" |
-| `downloading` | Bytes in flight | Bottom-right toast with progress bar |
-| `downloaded` | Ready to install | Centered modal: "Restart now" / "On next quit" |
-| `not-available` | Local matches latest | None (tray check shows toast) |
-| `unsupported` | Platform format doesn't support auto-update (e.g. win portable) | Modal with link to GitHub release page |
-| `error` | Network or signature failure | Bottom-right toast with retry |
-| `disabled` | Dev mode, `CODENEXUM_DISABLE_UPDATES=1`, or running from `bun run dev` | None |
+| State           | Meaning                                                                | UI                                             |
+| --------------- | ---------------------------------------------------------------------- | ---------------------------------------------- |
+| `idle`          | Initial, no check yet                                                  | None                                           |
+| `checking`      | Network call to GitHub in flight                                       | None                                           |
+| `available`     | New version found, ready to download                                   | Centered modal: "Download" / "Later"           |
+| `downloading`   | Bytes in flight                                                        | Bottom-right toast with progress bar           |
+| `downloaded`    | Ready to install                                                       | Centered modal: "Restart now" / "On next quit" |
+| `not-available` | Local matches latest                                                   | None (tray check shows toast)                  |
+| `unsupported`   | Platform format doesn't support auto-update (e.g. win portable)        | Modal with link to GitHub release page         |
+| `error`         | Network or signature failure                                           | Bottom-right toast with retry                  |
+| `disabled`      | Dev mode, `CODENEXUM_DISABLE_UPDATES=1`, or running from `bun run dev` | None                                           |
 
 ## How a release is consumed by the app
 
@@ -32,12 +32,12 @@ CodeNexum ships auto-updates via GitHub Releases. The Electron app polls the lat
 
 ## Build targets
 
-| Platform | Target | Auto-update? |
-| --- | --- | --- |
-| macOS | dmg (x64 + arm64) | Yes |
-| Windows | nsis installer (x64) | Yes |
-| Windows | portable (x64) | No — modal links to manual download |
-| Linux | AppImage (x64 + arm64) | Yes |
+| Platform | Target                 | Auto-update?                        |
+| -------- | ---------------------- | ----------------------------------- |
+| macOS    | dmg (x64 + arm64)      | Yes                                 |
+| Windows  | nsis installer (x64)   | Yes                                 |
+| Windows  | portable (x64)         | No — modal links to manual download |
+| Linux    | AppImage (x64 + arm64) | Yes                                 |
 
 The Windows portable build is kept for users who prefer it, but it does not receive auto-updates. The first time such a user opens the app after we publish a new version, they will see the "unsupported" modal with a link to GitHub Releases.
 
@@ -91,8 +91,7 @@ cp /tmp/out.linux/*.AppImage /tmp/out.linux/latest-linux*.yml apps/electron/out/
 // replace the `if (isMacOsCatalina())` block to also match linux
 if ((0, macosVersion_1.isMacOsCatalina)() || process.platform === "linux") {
   // ...UninstallerReader.exec path...
-}
-else {
+} else {
   // WineVm.exec path
 }
 ```

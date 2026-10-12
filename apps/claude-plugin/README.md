@@ -51,6 +51,7 @@ node apps/claude-plugin/scripts/install.mjs /path/to/a/test/project --force
 ```
 
 This:
+
 1. Computes a sha1 of `dist/hook.mjs`. If the same hash is already in
    `~/.codenexum/hook.mjs`, skips the copy.
 2. Reads the existing `<project>/.claude/settings.json` (if any) and merges

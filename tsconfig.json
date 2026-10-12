@@ -23,5 +23,9 @@
     }
   },
   "include": ["packages/*/src/**/*", "apps/*/src/**/*"],
-  "exclude": ["apps/electron/test-e2e/**/*", "**/dist/**/*", "**/node_modules/**/*"]
+  "exclude": [
+    "apps/electron/test-e2e/**/*",
+    "**/dist/**/*",
+    "**/node_modules/**/*"
+  ]
 }
