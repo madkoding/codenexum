@@ -15,13 +15,13 @@ jobs:
     name: Conventional Commits title
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install commitlint
@@ -31,7 +31,7 @@ jobs:
             @commitlint/config-conventional@^19
       - name: Lint PR title
         if: github.event_name == 'pull_request'
-        uses: wagoid/commitlint-github-action@v5
+        uses: wagoid/commitlint-github-action@v6
         with:
           configFile: commitlint.config.cjs
           failOnWarning: true
