@@ -127,7 +127,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.4.0",
-    "electron": "43.1.0",
+    "electron": "43.8.1",
     "electron-builder": "^26.15.6",
     "electron-updater": "^6.8.9",
     "electron-vite": "^5.0.0",
